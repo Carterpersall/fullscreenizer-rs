@@ -171,7 +171,14 @@ impl MyWindow {
     }
 
     fn enable_dark_mode(&self) {
-        let hwnd = HWND(self.wnd.hwnd().ptr() as isize);
+        // Get a handle to the window
+        let wnd = self.wnd.hwnd();
+
+        // Get a handle to the process list
+        let process_list = self.process_list.hwnd();
+
+        // Get an unsafe handle to the window
+        let hwnd = HWND(wnd.ptr() as isize);
 
         // Enable dark mode on the window
         unsafe {
@@ -187,29 +194,21 @@ impl MyWindow {
 
         // Enable dark mode on the elements in the window
         // Calling SetWindowTheme in too quick succession can cause the theme to not be applied
-        enable_dark_mode_for_element(self.wnd.hwnd());
-        enable_dark_mode_for_element(self.process_list.hwnd());
+        enable_dark_mode_for_element(wnd);
+        enable_dark_mode_for_element(process_list);
         enable_dark_mode_for_element(self.refresh_btn.hwnd());
         enable_dark_mode_for_element(self.help_btn.hwnd());
         enable_dark_mode_for_element(self.fullscreenize_btn.hwnd());
 
         // Set the background color of the window
-        let color = COLORREF::new(0x1E, 0x1E, 0x1E);
-        //match HBRUSH::from_sys_color(color) {
-        //    Ok(mut brush) => {
-                unsafe { SetClassLongPtrW(
-                    hwnd,
-                    GCLP_HBRBACKGROUND,
-                    HBRUSH::from_sys_color(COLOR::WINDOWTEXT).ptr() as isize,
-                )};
-                //drop(brush)
-        //    }
-        //    Err(e) => eprintln!("CreateSolidBrush failed: {}", e),
-        //}
+        unsafe { SetClassLongPtrW(
+            hwnd,
+            GCLP_HBRBACKGROUND,
+            HBRUSH::from_sys_color(COLOR::WINDOWTEXT).ptr() as isize,
+        )};
 
         // Set the background color of the listview
-        self.process_list
-            .hwnd()
+        process_list
             .SendMessage(SetBkColor {
                 color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
             })
@@ -217,8 +216,7 @@ impl MyWindow {
             .ok();
 
         // Set the background color of the elements in the listview
-        self.process_list
-            .hwnd()
+        process_list
             .SendMessage(SetTextBkColor {
                 color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
             })
@@ -226,17 +224,18 @@ impl MyWindow {
             .ok();
 
         // Set the text color of the elements in the listview
-        self.process_list
-            .hwnd()
+        process_list
             .SendMessage(SetTextColor {
                 color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
             })
             .map_err(|e| eprintln!("SetTextColor failed: {}", e))
             .ok();
 
+        // Get the handle of the top toggle
+        let top_toggle = self.top_toggle.hwnd();
+
         // Set the background color of the checkbox listview to the same as the window background
-        self.top_toggle
-            .hwnd()
+        top_toggle
             .SendMessage(SetBkColor {
                 color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //0x6D, 0x6D, 0x6D)),
             })
@@ -244,8 +243,7 @@ impl MyWindow {
             .ok();
 
         // Set the background color of the element in the checkbox listview
-        self.top_toggle
-            .hwnd()
+        top_toggle
             .SendMessage(SetTextBkColor {
                 color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //(0x6D, 0x6D, 0x6D)),
             })
@@ -253,8 +251,7 @@ impl MyWindow {
             .ok();
 
         // Set the text color of the elements in the checkbox listview
-        self.top_toggle
-            .hwnd()
+        top_toggle
             .SendMessage(SetTextColor {
                 color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
             })
@@ -452,6 +449,9 @@ impl MyWindow {
         self.wnd.on().wm_paint({
             let self2 = self.clone();
             move || -> w::AnyResult<()> {
+                // Get a handle to the window
+                let wnd = self2.wnd.hwnd();
+                
                 // Check if this is the first paint event
                 if first_paint.lock().ok().unwrap().to_owned() { // TODO: Unwrap correctly
                     // TODO: Surely there is a better way to do this
@@ -465,22 +465,28 @@ impl MyWindow {
 
                     // If dark mode is enabled, check if the theme was applied correctly
                     if self2.is_dark_mode.lock().unwrap().to_owned() { // TODO: Unwrap correctly
-                        self2.wnd.hwnd().UpdateWindow().ok();
-                        check_theme_checkbox(self2.top_toggle.hwnd());
-                        check_theme_btn(self2.refresh_btn.hwnd());
-                        check_theme_btn(self2.help_btn.hwnd());
-                        check_theme_btn(self2.fullscreenize_btn.hwnd());
+                        // Get handles to the elements
+                        let top_toggle = self2.top_toggle.hwnd();
+                        let refresh_btn = self2.refresh_btn.hwnd();
+                        let help_btn = self2.help_btn.hwnd();
+                        let fullscreenize_btn = self2.fullscreenize_btn.hwnd();
+                        
+                        wnd.UpdateWindow().ok();
+                        check_theme_checkbox(top_toggle);
+                        check_theme_btn(refresh_btn);
+                        check_theme_btn(help_btn);
+                        check_theme_btn(fullscreenize_btn);
                         // Check again as both applying dark mode and the check can randomly fail
-                        self2.wnd.hwnd().UpdateWindow().ok();
-                        check_theme_checkbox(self2.top_toggle.hwnd());
-                        check_theme_btn(self2.refresh_btn.hwnd());
-                        check_theme_btn(self2.help_btn.hwnd());
-                        check_theme_btn(self2.fullscreenize_btn.hwnd());
+                        wnd.UpdateWindow().ok();
+                        check_theme_checkbox(top_toggle);
+                        check_theme_btn(refresh_btn);
+                        check_theme_btn(help_btn);
+                        check_theme_btn(fullscreenize_btn);
                     }
                 }
 
                 // Call the default window procedure
-                self2.wnd.hwnd().DefWindowProc(Paint {});
+                wnd.DefWindowProc(Paint {});
 
                 Ok(())
             }
@@ -531,8 +537,11 @@ impl MyWindow {
         self.wnd.on().wm_size({
             let self2 = self.clone();
             move |size| -> w::AnyResult<()> {
+                // Get a handle to the window
+                let wnd = self2.wnd.hwnd();
+                
                 // Move and resize the elements that automatically resize
-                self2.wnd.hwnd().DefWindowProc(size);
+                wnd.DefWindowProc(size);
 
                 // Move the label to the correct position
                 self2.label
@@ -546,7 +555,7 @@ impl MyWindow {
                     .ok();
 
                 // Get the new window dimensions
-                let new_size = match self2.wnd.hwnd().GetClientRect() {
+                let new_size = match wnd.GetClientRect() {
                     Ok(size) => size,
                     Err(e) => {
                         eprintln!("Failed to get window size - GetClientRect Failed: {}", e);
