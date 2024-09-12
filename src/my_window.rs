@@ -178,7 +178,7 @@ impl MyWindow {
         let process_list = self.process_list.hwnd();
 
         // Get an unsafe handle to the window
-        let hwnd = HWND(wnd.ptr() as isize);
+        let hwnd = HWND(wnd.ptr());
 
         // Enable dark mode on the window
         unsafe {
@@ -327,7 +327,7 @@ impl MyWindow {
                 .ok();
 
             // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
-            let listview = HWND(self.process_list.hwnd().ptr() as isize);
+            let listview = HWND(self.process_list.hwnd().ptr());
             unsafe {
                 SetWindowTheme(
                     listview,
@@ -389,7 +389,7 @@ impl MyWindow {
                 let icon = match unsafe {
                     HICON::from_ptr(
                         SendMessageW(
-                            HWND(hwnd.ptr() as isize),
+                            HWND(hwnd.ptr()),
                             WM_GETICON,
                             WPARAM(ICON_SMALL as usize),
                             LPARAM(0),
@@ -766,7 +766,7 @@ impl MyWindow {
 }
 
 fn enable_dark_mode_for_element(element: &w::HWND) {
-    let hwnd = HWND(element.ptr() as isize);
+    let hwnd = HWND(element.ptr());
 
     // Enable dark mode on the element
     unsafe {
@@ -788,7 +788,7 @@ fn enable_dark_mode_for_element(element: &w::HWND) {
 fn check_theme_btn(element: &w::HWND) {
     // Get color of the element
     let color = unsafe { GetPixel(
-        HDC(element.GetDC().unwrap().leak().ptr() as isize), // TODO: Unwrap correctly
+        HDC(element.GetDC().unwrap().leak().ptr()), // TODO: Unwrap correctly
         3,
         3
     )}.0;
@@ -813,7 +813,7 @@ fn check_theme_btn(element: &w::HWND) {
 fn check_theme_checkbox(element: &w::HWND) {
     // Get color of the element
     let color = unsafe { GetPixel(
-        HDC(element.GetDC().unwrap().leak().ptr() as isize), // TODO: Unwrap correctly
+        HDC(element.GetDC().unwrap().leak().ptr()), // TODO: Unwrap correctly
         3,
         3
     )}.0;
