@@ -396,8 +396,6 @@ impl MyWindow {
                 } {
                     icon if icon.as_opt().is_some() => icon,
                     _ => {
-                        println!("Failed to get icon for window");
-
                         // If retrieving the icon failed, try a different method
                         // See https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-geticon#remarks
                         let icon = unsafe {
