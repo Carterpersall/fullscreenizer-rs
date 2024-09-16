@@ -216,66 +216,60 @@ impl MyWindow {
 
         // Set the background color of the listview
         unsafe {
-            process_list
-                .SendMessage(SetBkColor {
-                    color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
-                })
+            process_list.SendMessage(SetBkColor {
+                color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
+            })
         }
-            .map_err(|e| eprintln!("SetBkColor failed: {}", e))
-            .ok();
+        .map_err(|e| eprintln!("SetBkColor failed: {}", e))
+        .ok();
 
         // Set the background color of the elements in the listview
         unsafe {
-            process_list
-                .SendMessage(SetTextBkColor {
-                    color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
-                })
+            process_list.SendMessage(SetTextBkColor {
+                color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
+            })
         }
-            .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
-            .ok();
+        .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
+        .ok();
 
         // Set the text color of the elements in the listview
         unsafe {
-            process_list
-                .SendMessage(SetTextColor {
-                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                })
+            process_list.SendMessage(SetTextColor {
+                color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+            })
         }
-            .map_err(|e| eprintln!("SetTextColor failed: {}", e))
-            .ok();
+        .map_err(|e| eprintln!("SetTextColor failed: {}", e))
+        .ok();
 
         // Get the handle of the top toggle
         let top_toggle = self.top_toggle.hwnd();
 
         // Set the background color of the checkbox listview to the same as the window background
         unsafe {
-            top_toggle
-                .SendMessage(SetBkColor {
-                    color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //0x6D, 0x6D, 0x6D)),
-                })
+            top_toggle.SendMessage(SetBkColor {
+                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //0x6D, 0x6D, 0x6D)),
+            })
         }
-            .map_err(|e| eprintln!("SetBkColor failed: {}", e))
-            .ok();
+        .map_err(|e| eprintln!("SetBkColor failed: {}", e))
+        .ok();
 
         // Set the background color of the element in the checkbox listview
         unsafe {
-            top_toggle
-                .SendMessage(SetTextBkColor {
-                    color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //(0x6D, 0x6D, 0x6D)),
-                })
+            top_toggle.SendMessage(SetTextBkColor {
+                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //(0x6D, 0x6D, 0x6D)),
+            })
         }
-            .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
-            .ok();
+        .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
+        .ok();
 
         // Set the text color of the elements in the checkbox listview
         unsafe {
-            top_toggle
-                .SendMessage(SetTextColor {
-                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                })
+            top_toggle.SendMessage(SetTextColor {
+                color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+            })
         }
-            .map_err(|e| eprintln!("SetTextColor failed: {}", e))
-            .ok();
+        .map_err(|e| eprintln!("SetTextColor failed: {}", e))
+        .ok();
     }
 
     fn set_system_theme(&self) {
@@ -320,36 +314,30 @@ impl MyWindow {
         } else {
             // Set the background of the label to the same as the window background
             unsafe {
-                self.label
-                    .hwnd()
-                    .SendMessage(SetBkColor {
-                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                    })
+                self.label.hwnd().SendMessage(SetBkColor {
+                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                })
             }
-                .map_err(|e| eprintln!("SetBkColor failed: {}", e))
-                .ok();
+            .map_err(|e| eprintln!("SetBkColor failed: {}", e))
+            .ok();
 
             // Set the background color of the checkbox listview to the same as the window background
             unsafe {
-                self.top_toggle
-                    .hwnd()
-                    .SendMessage(SetBkColor {
-                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                    })
+                self.top_toggle.hwnd().SendMessage(SetBkColor {
+                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                })
             }
-                .map_err(|e| eprintln!("SetBkColor failed: {}", e))
-                .ok();
+            .map_err(|e| eprintln!("SetBkColor failed: {}", e))
+            .ok();
 
             // Set the background color of the element in the checkbox listview
             unsafe {
-                self.top_toggle
-                    .hwnd()
-                    .SendMessage(SetTextBkColor {
-                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                    })
+                self.top_toggle.hwnd().SendMessage(SetTextBkColor {
+                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                })
             }
-                .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
-                .ok();
+            .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
+            .ok();
 
             // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
             let listview = HWND(self.process_list.hwnd().ptr());
@@ -375,14 +363,12 @@ impl MyWindow {
 
         // Create an image list to store the icons
         let image_list = HIMAGELIST::Create(SIZE::new(16, 16), co::ILC::COLOR32, 0, 100)
-            .unwrap_or_else(
-                |e| {
-                    // If creating the image list failed, disable the use of icons
-                    use_icons = false;
-                    eprintln!("Imagelist Creation failed {}", e);
-                    unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
-                }
-            );
+            .unwrap_or_else(|e| {
+                // If creating the image list failed, disable the use of icons
+                use_icons = false;
+                eprintln!("Imagelist Creation failed {}", e);
+                unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
+            });
 
         // Enumerate over all open windows
         EnumWindows(|hwnd: w::HWND| -> bool {
@@ -401,10 +387,12 @@ impl MyWindow {
 
             let icon_id = if use_icons {
                 // Get the window icon
-                let icon= match unsafe {
-                    HICON::from_ptr(
-                        hwnd.SendMessage(w::msg::WndMsg::new(co::WM::GETICON, ICON_SMALL as usize, 0)) as *mut _
-                    )
+                let icon = match unsafe {
+                    HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
+                        co::WM::GETICON,
+                        ICON_SMALL as usize,
+                        0,
+                    )) as *mut _)
                 } {
                     icon if icon.as_opt().is_some() => icon,
                     _ => {
@@ -418,7 +406,9 @@ impl MyWindow {
 
                         if icon == HICON::NULL || icon == HICON::INVALID {
                             // Try retrieving the large icon
-                            unsafe { HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICON) as *mut _) }
+                            unsafe {
+                                HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICON) as *mut _)
+                            }
                         } else {
                             icon
                         }
@@ -428,13 +418,11 @@ impl MyWindow {
                 // Add the icon to the image list
                 Option::from(
                     image_list
-                        .AddIcon(&icon)// TODO: Does this leak the icon?
-                        .unwrap_or_else(
-                            |e| {
-                                eprintln!("AddIcon failed {}\n", e);
-                                u32::MAX
-                            },
-                        ),
+                        .AddIcon(&icon) // TODO: Does this leak the icon?
+                        .unwrap_or_else(|e| {
+                            eprintln!("AddIcon failed {}\n", e);
+                            u32::MAX
+                        }),
                 )
             } else {
                 None
@@ -470,7 +458,8 @@ impl MyWindow {
                 let wnd = self2.wnd.hwnd();
 
                 // Check if this is the first paint event
-                if first_paint.lock().ok().unwrap().to_owned() { // TODO: Unwrap correctly
+                if first_paint.lock().ok().unwrap().to_owned() {
+                    // TODO: Unwrap correctly
                     // TODO: Surely there is a better way to do this
                     *first_paint.lock().ok().unwrap() = false;
 
@@ -482,7 +471,8 @@ impl MyWindow {
                     );
 
                     // If dark mode is enabled, check if the theme was applied correctly
-                    if self2.is_dark_mode.lock().unwrap().to_owned() { // TODO: Unwrap correctly
+                    if self2.is_dark_mode.lock().unwrap().to_owned() {
+                        // TODO: Unwrap correctly
                         // Get handles to the elements
                         let top_toggle = self2.top_toggle.hwnd();
                         let refresh_btn = self2.refresh_btn.hwnd();
@@ -564,14 +554,16 @@ impl MyWindow {
                 unsafe { wnd.DefWindowProc(size) };
 
                 // Move the label to the correct position
-                self2.label
+                self2
+                    .label
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::new(10, 9),
                         SIZE::new(200, 15),
                         SWP::NOZORDER,
-                    ).map_err(|e| eprintln!("Failed to move label - SetWindowPos Failed: {}", e))
+                    )
+                    .map_err(|e| eprintln!("Failed to move label - SetWindowPos Failed: {}", e))
                     .ok();
 
                 // Get the new window dimensions
@@ -591,34 +583,52 @@ impl MyWindow {
                 };
 
                 // Resize and center align the help button
-                self2.help_btn
+                self2
+                    .help_btn
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::new(((new_size.right - new_size.left) / 2) - (btn_size.cx / 2), new_size.bottom - 40),
+                        POINT::new(
+                            ((new_size.right - new_size.left) / 2) - (btn_size.cx / 2),
+                            new_size.bottom - 40,
+                        ),
                         btn_size,
                         SWP::NOZORDER,
-                    ).map_err(|e| eprintln!("Failed to move help button - SetWindowPos Failed: {}", e))
+                    )
+                    .map_err(|e| {
+                        eprintln!("Failed to move help button - SetWindowPos Failed: {}", e)
+                    })
                     .ok();
 
                 // Resize and align the other buttons
-                self2.refresh_btn
+                self2
+                    .refresh_btn
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::new(13, new_size.bottom - 40),
                         btn_size,
                         SWP::NOZORDER,
-                    ).map_err(|e| eprintln!("Failed to move refresh button - SetWindowPos Failed: {}", e))
+                    )
+                    .map_err(|e| {
+                        eprintln!("Failed to move refresh button - SetWindowPos Failed: {}", e)
+                    })
                     .ok();
-                self2.fullscreenize_btn
+                self2
+                    .fullscreenize_btn
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::new(new_size.right - btn_size.cx - 13, new_size.bottom - 40),
                         btn_size,
                         SWP::NOZORDER,
-                    ).map_err(|e| eprintln!("Failed to move fullscreenize button - SetWindowPos Failed: {}", e))
+                    )
+                    .map_err(|e| {
+                        eprintln!(
+                            "Failed to move fullscreenize button - SetWindowPos Failed: {}",
+                            e
+                        )
+                    })
                     .ok();
 
                 Ok(())
@@ -631,7 +641,8 @@ impl MyWindow {
                 // Light mode background color and dark mode text color
                 let mut color = COLORREF::new(0xF0, 0xF0, 0xF0);
 
-                if self2.is_dark_mode.lock().unwrap().to_owned() { // TODO: Unwrap correctly
+                if self2.is_dark_mode.lock().unwrap().to_owned() {
+                    // TODO: Unwrap correctly
                     // Set the text color of the label to white
                     ctl.hdc.SetTextColor(color).unwrap(); // TODO: Unwrap correctly
 
@@ -812,11 +823,14 @@ fn enable_dark_mode_for_element(element: &w::HWND) {
 
 fn check_theme_btn(element: &w::HWND) {
     // Get color of the element
-    let color = unsafe { GetPixel(
-        HDC(element.GetDC().unwrap().leak().ptr()), // TODO: Unwrap correctly
-        3,
-        3
-    )}.0;
+    let color = unsafe {
+        GetPixel(
+            HDC(element.GetDC().unwrap().leak().ptr()), // TODO: Unwrap correctly
+            3,
+            3,
+        )
+    }
+    .0;
 
     // Return if the color is CLR_INVALID
     if color == 0xFFFFFFFF {
@@ -837,11 +851,14 @@ fn check_theme_btn(element: &w::HWND) {
 
 fn check_theme_checkbox(element: &w::HWND) {
     // Get color of the element
-    let color = unsafe { GetPixel(
-        HDC(element.GetDC().unwrap().leak().ptr()), // TODO: Unwrap correctly
-        3,
-        3
-    )}.0;
+    let color = unsafe {
+        GetPixel(
+            HDC(element.GetDC().unwrap().leak().ptr()), // TODO: Unwrap correctly
+            3,
+            3,
+        )
+    }
+    .0;
 
     // Return if the color is CLR_INVALID
     if color == 0xFFFFFFFF {
