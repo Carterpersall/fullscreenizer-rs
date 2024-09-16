@@ -7,21 +7,26 @@ use std::ops::Shr;
 use std::sync::{Mutex, MutexGuard};
 
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{BOOL, HWND};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
 use windows::Win32::Graphics::Gdi::{GetPixel, HDC};
 use windows::Win32::UI::Controls::SetWindowTheme;
 use windows::Win32::UI::WindowsAndMessaging::{
-    SendMessageW, SetClassLongPtrW, GCLP_HBRBACKGROUND, ICON_SMALL, WM_GETICON, WS_POPUP,
-    WS_VISIBLE,
+    SetClassLongPtrW, GCLP_HBRBACKGROUND, ICON_SMALL, WS_POPUP, WS_VISIBLE,
 };
 
 use winsafe::co::{COLOR, SWP};
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
-use winsafe::prelude::{comctl_Himagelist, comctl_Hwnd, gdi_Hbrush, gdi_Hdc, gdi_Hfont, kernel_Hkey, user_Hmonitor, user_Hwnd, GuiEvents, GuiEventsAll, GuiNativeControlEvents, GuiParent, GuiWindow, Handle};
-use winsafe::{self as w, co, gui, AdjustWindowRectEx, EnumWindows, GetLastError, COLORREF, HBRUSH, HICON, HIMAGELIST, MONITORINFOEX, POINT, RECT, SIZE, HwndPlace};
+use winsafe::prelude::{
+    advapi_Hkey, comctl_Himagelist, comctl_Hwnd, gdi_Hbrush, gdi_Hdc, gdi_Hfont, user_Hmonitor,
+    user_Hwnd, GuiNativeControlEvents, GuiParent, GuiWindow, Handle,
+};
+use winsafe::{
+    self as w, co, gui, AdjustWindowRectEx, EnumWindows, GetLastError, HwndPlace, COLORREF, HBRUSH,
+    HICON, HIMAGELIST, POINT, RECT, SIZE,
+};
 
 #[derive(Clone)]
 pub struct MyWindow {
@@ -201,33 +206,41 @@ impl MyWindow {
         enable_dark_mode_for_element(self.fullscreenize_btn.hwnd());
 
         // Set the background color of the window
-        unsafe { SetClassLongPtrW(
-            hwnd,
-            GCLP_HBRBACKGROUND,
-            HBRUSH::from_sys_color(COLOR::WINDOWTEXT).ptr() as isize,
-        )};
+        unsafe {
+            SetClassLongPtrW(
+                hwnd,
+                GCLP_HBRBACKGROUND,
+                HBRUSH::from_sys_color(COLOR::WINDOWTEXT).ptr() as isize,
+            )
+        };
 
         // Set the background color of the listview
-        process_list
-            .SendMessage(SetBkColor {
-                color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
-            })
+        unsafe {
+            process_list
+                .SendMessage(SetBkColor {
+                    color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
+                })
+        }
             .map_err(|e| eprintln!("SetBkColor failed: {}", e))
             .ok();
 
         // Set the background color of the elements in the listview
-        process_list
-            .SendMessage(SetTextBkColor {
-                color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
-            })
+        unsafe {
+            process_list
+                .SendMessage(SetTextBkColor {
+                    color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
+                })
+        }
             .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
             .ok();
 
         // Set the text color of the elements in the listview
-        process_list
-            .SendMessage(SetTextColor {
-                color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-            })
+        unsafe {
+            process_list
+                .SendMessage(SetTextColor {
+                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                })
+        }
             .map_err(|e| eprintln!("SetTextColor failed: {}", e))
             .ok();
 
@@ -235,26 +248,32 @@ impl MyWindow {
         let top_toggle = self.top_toggle.hwnd();
 
         // Set the background color of the checkbox listview to the same as the window background
-        top_toggle
-            .SendMessage(SetBkColor {
-                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //0x6D, 0x6D, 0x6D)),
-            })
+        unsafe {
+            top_toggle
+                .SendMessage(SetBkColor {
+                    color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //0x6D, 0x6D, 0x6D)),
+                })
+        }
             .map_err(|e| eprintln!("SetBkColor failed: {}", e))
             .ok();
 
         // Set the background color of the element in the checkbox listview
-        top_toggle
-            .SendMessage(SetTextBkColor {
-                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //(0x6D, 0x6D, 0x6D)),
-            })
+        unsafe {
+            top_toggle
+                .SendMessage(SetTextBkColor {
+                    color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //(0x6D, 0x6D, 0x6D)),
+                })
+        }
             .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
             .ok();
 
         // Set the text color of the elements in the checkbox listview
-        top_toggle
-            .SendMessage(SetTextColor {
-                color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-            })
+        unsafe {
+            top_toggle
+                .SendMessage(SetTextColor {
+                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                })
+        }
             .map_err(|e| eprintln!("SetTextColor failed: {}", e))
             .ok();
     }
@@ -300,29 +319,35 @@ impl MyWindow {
             self.enable_dark_mode();
         } else {
             // Set the background of the label to the same as the window background
-            self.label
-                .hwnd()
-                .SendMessage(SetBkColor {
-                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                })
+            unsafe {
+                self.label
+                    .hwnd()
+                    .SendMessage(SetBkColor {
+                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                    })
+            }
                 .map_err(|e| eprintln!("SetBkColor failed: {}", e))
                 .ok();
 
             // Set the background color of the checkbox listview to the same as the window background
-            self.top_toggle
-                .hwnd()
-                .SendMessage(SetBkColor {
-                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                })
+            unsafe {
+                self.top_toggle
+                    .hwnd()
+                    .SendMessage(SetBkColor {
+                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                    })
+            }
                 .map_err(|e| eprintln!("SetBkColor failed: {}", e))
                 .ok();
 
             // Set the background color of the element in the checkbox listview
-            self.top_toggle
-                .hwnd()
-                .SendMessage(SetTextBkColor {
-                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                })
+            unsafe {
+                self.top_toggle
+                    .hwnd()
+                    .SendMessage(SetTextBkColor {
+                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                    })
+            }
                 .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
                 .ok();
 
@@ -357,17 +382,7 @@ impl MyWindow {
                     eprintln!("Imagelist Creation failed {}", e);
                     unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
                 }
-            )
-            .leak();
-
-        // Set the image list for the listview
-        if let Some(old_image_list) = self
-            .process_list
-            .set_image_list(co::LVSIL::SMALL, &image_list)
-        {
-            // Destroy the old image list
-            drop(unsafe { ImageListDestroyGuard::new(old_image_list) })
-        }
+            );
 
         // Enumerate over all open windows
         EnumWindows(|hwnd: w::HWND| -> bool {
@@ -386,20 +401,17 @@ impl MyWindow {
 
             let icon_id = if use_icons {
                 // Get the window icon
-                let icon = match unsafe {
+                let icon= match unsafe {
                     HICON::from_ptr(
-                        SendMessageW(
-                            HWND(hwnd.ptr()),
-                            WM_GETICON,
-                            WPARAM(ICON_SMALL as usize),
-                            LPARAM(0),
-                        )
-                            .0 as *mut _,
+                        hwnd.SendMessage(w::msg::WndMsg::new(co::WM::GETICON, ICON_SMALL as usize, 0)) as *mut _
                     )
                 } {
                     icon if icon.as_opt().is_some() => icon,
                     _ => {
+                        println!("Failed to get icon for window");
+
                         // If retrieving the icon failed, try a different method
+                        // See https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-geticon#remarks
                         let icon = unsafe {
                             HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICONSM) as *mut _)
                         };
@@ -416,10 +428,10 @@ impl MyWindow {
                 // Add the icon to the image list
                 Option::from(
                     image_list
-                        .AddIcon(&icon)
+                        .AddIcon(&icon)// TODO: Does this leak the icon?
                         .unwrap_or_else(
                             |e| {
-                                eprintln!("AddIcon failed {}", e);
+                                eprintln!("AddIcon failed {}\n", e);
                                 u32::MAX
                             },
                         ),
@@ -432,13 +444,18 @@ impl MyWindow {
             windows.push(hwnd);
 
             // Add the window to the list
-            self.process_list.items().add(&[title], icon_id);
+            self.process_list.items().add(&[title], icon_id, ());
 
             // Return true to continue enumerating
             true
         })
         .map_err(|e| eprintln!("EnumWindows failed: {}", e))
         .ok();
+
+        // Set the image list for the listview
+        let _ = self
+            .process_list
+            .set_image_list(co::LVSIL::SMALL, image_list);
     }
 
     fn events(&self) {
@@ -451,7 +468,7 @@ impl MyWindow {
             move || -> w::AnyResult<()> {
                 // Get a handle to the window
                 let wnd = self2.wnd.hwnd();
-                
+
                 // Check if this is the first paint event
                 if first_paint.lock().ok().unwrap().to_owned() { // TODO: Unwrap correctly
                     // TODO: Surely there is a better way to do this
@@ -461,6 +478,7 @@ impl MyWindow {
                     self2.top_toggle.items().add(
                         &["Apply \"stay on top\" flag to avoid taskbar flickering"],
                         None,
+                        (),
                     );
 
                     // If dark mode is enabled, check if the theme was applied correctly
@@ -470,7 +488,7 @@ impl MyWindow {
                         let refresh_btn = self2.refresh_btn.hwnd();
                         let help_btn = self2.help_btn.hwnd();
                         let fullscreenize_btn = self2.fullscreenize_btn.hwnd();
-                        
+
                         wnd.UpdateWindow().ok();
                         check_theme_checkbox(top_toggle);
                         check_theme_btn(refresh_btn);
@@ -486,7 +504,7 @@ impl MyWindow {
                 }
 
                 // Call the default window procedure
-                wnd.DefWindowProc(Paint {});
+                unsafe { wnd.DefWindowProc(Paint {}) };
 
                 Ok(())
             }
@@ -512,10 +530,12 @@ impl MyWindow {
                     "Arial",
                 ) {
                     Ok(mut hfont) => {
-                        self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: hfont.leak(),
-                            redraw: true,
-                        });
+                        unsafe {
+                            self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
+                                hfont: hfont.leak(),
+                                redraw: true,
+                            })
+                        };
                         drop(hfont);
                     }
                     Err(e) => eprintln!("Failed to create font - CreateFont failed: {}", e),
@@ -528,7 +548,7 @@ impl MyWindow {
                 self2.refresh_btn.trigger_click();
 
                 // Call the default window procedure
-                self2.wnd.hwnd().DefWindowProc(create);
+                unsafe { self2.wnd.hwnd().DefWindowProc(create) };
 
                 Ok(0)
             }
@@ -539,9 +559,9 @@ impl MyWindow {
             move |size| -> w::AnyResult<()> {
                 // Get a handle to the window
                 let wnd = self2.wnd.hwnd();
-                
+
                 // Move and resize the elements that automatically resize
-                wnd.DefWindowProc(size);
+                unsafe { wnd.DefWindowProc(size) };
 
                 // Move the label to the correct position
                 self2.label
@@ -705,10 +725,9 @@ impl MyWindow {
                 };
 
                 // Get the dimensions of the monitor the window is on
-                let mut monitor_info = MONITORINFOEX::default();
-                let Ok(_) = window
+                let Ok(monitor_info) = window
                     .MonitorFromWindow(co::MONITOR::DEFAULTTONEAREST)
-                    .GetMonitorInfo(&mut monitor_info)
+                    .GetMonitorInfo()
                     .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - GetMonitorInfo failed with error: {}", e)))
                     else {
                         return Ok(());
@@ -721,30 +740,36 @@ impl MyWindow {
                 };
 
                 // Set the window style
-                if window.SetWindowLongPtr(co::GWLP::STYLE, (WS_POPUP.0 | WS_VISIBLE.0) as isize) == 0 {
+                if unsafe { window.SetWindowLongPtr(co::GWLP::STYLE, (WS_POPUP.0 | WS_VISIBLE.0) as isize) } == 0 {
                     show_error_message(&format!("Failed to fullscreenize window - SetWindowLongPtr failed with error: {}", GetLastError()));
                     return Ok(());
                 }
 
                 // Set the window size
-                if AdjustWindowRectEx(&mut rect, window.styles(), false, window.styles_ex())
-                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectEx failed with error: {}", e)))
-                    .is_err() {
+                match AdjustWindowRectEx(rect, window.style(), false, window.style_ex()) {
+                    Ok(rct) => rect = rct, // TODO: Test this
+                    Err(e) => {
+                        show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectEx failed with error: {}", e));
                         return Ok(());
-                    };
+                    }
+                }
 
                 // Set window to stay on top if checkbox is checked
-                if self2.top_toggle.hwnd().SendMessage(
-                    w::msg::lvm::GetItemState {
-                        index: 0,
-                        mask: co::LVIS::STATEIMAGEMASK
-                    }
-                )
-                    .raw().shr(12u32) - 1 == 1u32 &&
+                if unsafe {
+                    self2.top_toggle.hwnd().SendMessage(
+                        w::msg::lvm::GetItemState {
+                            index: 0,
+                            mask: co::LVIS::STATEIMAGEMASK
+                        }
+                    )
+                }
+                .raw().shr(12u32) - 1 == 1u32 &&
+                unsafe {
                     window.SetWindowLongPtr(
                         co::GWLP::EXSTYLE,
-                        (window.styles_ex().raw() | co::WS_EX::TOPMOST.raw()) as isize,
-                    ) == 0 {
+                        (window.style_ex().raw() | co::WS_EX::TOPMOST.raw()) as isize,
+                    )
+                } == 0 {
                     show_error_message(&format!("Failed to set window to stay on top - SetWindowLongPtr failed with error: {}", GetLastError()));
                     return Ok(());
                 }
@@ -839,7 +864,6 @@ fn show_error_message(message: &str) {
     // Show a popup window with the error message
     w::HWND::NULL
         .TaskDialog(
-            None,
             Some("Error"),
             None,
             Some(message),
@@ -855,7 +879,6 @@ fn show_help_message() {
     // TODO: Create custom window so dark mode can be implemented
     w::HWND::NULL
         .TaskDialog(
-            None,
             Some("Fullscreenizer"),
             None,
             Some("Open the game you want to force in borderless-windowed-fullscreen mode, \

@@ -5,8 +5,9 @@ authors = ["Carter Persall <carterpersll@gmail.com>"]
 edition = "2021"
 
 [dependencies.winsafe]
-version = "0.0.20"
+version = "0.0.22"
 features = [
+    "advapi",
     "gui",
     "comctl",
     "user",

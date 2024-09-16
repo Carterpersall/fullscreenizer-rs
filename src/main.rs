@@ -9,7 +9,6 @@ fn main() {
     if let Err(e) = run_app() {
         w::HWND::NULL
             .TaskDialog(
-                None,
                 Some("Unhandled error"),
                 None,
                 Some(&e.to_string()),
