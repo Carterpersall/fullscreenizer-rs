@@ -6,8 +6,8 @@ use core::mem::size_of;
 use std::ops::Shr;
 use std::sync::{Mutex, MutexGuard};
 
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{BOOL, HWND};
+use windows::core::{BOOL, PCWSTR};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
 use windows::Win32::Graphics::Gdi::{GetPixel, HDC};
 use windows::Win32::UI::Controls::SetWindowTheme;
@@ -703,15 +703,15 @@ impl MyWindow {
                 Ok(())
             }
         });
-        
+
         self.help_btn.on_subclass().wm_paint({
             let self2 = self.clone();
             move || {
                 // Make the undrawn area of the button transparent
                 self2.help_btn.hwnd().SetLayeredWindowAttributes(COLORREF::new(0xF0, 0xF0, 0xF0), 255, co::LWA::COLORKEY)?;
-                
+
                 unsafe { self2.help_btn.hwnd().DefSubclassProc(Paint {}) };
-                
+
                 Ok(())
             }
         });
@@ -723,15 +723,15 @@ impl MyWindow {
                 Ok(())
             }
         });
-        
+
         self.fullscreenize_btn.on_subclass().wm_paint({
             let self2 = self.clone();
             move || {
                 // Make the undrawn area of the button transparent
                 self2.fullscreenize_btn.hwnd().SetLayeredWindowAttributes(COLORREF::new(0xF0, 0xF0, 0xF0), 255, co::LWA::COLORKEY)?;
-                
+
                 unsafe { self2.fullscreenize_btn.hwnd().DefSubclassProc(Paint {}) };
-                
+
                 Ok(())
             }
         });
