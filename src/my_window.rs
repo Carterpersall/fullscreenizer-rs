@@ -9,7 +9,6 @@ use std::sync::{Mutex, MutexGuard};
 use windows::core::BOOL;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
-use windows::Win32::Graphics::Gdi::{GetPixel, HDC};
 use windows::Win32::UI::WindowsAndMessaging::{
     SetClassLongPtrW, GCLP_HBRBACKGROUND, ICON_SMALL, WS_POPUP, WS_VISIBLE,
 };
@@ -465,28 +464,6 @@ impl MyWindow {
                         None,
                         (),
                     );
-
-                    // If dark mode is enabled, check if the theme was applied correctly
-                    if self2.is_dark_mode.lock().unwrap().to_owned() {
-                        // TODO: Unwrap correctly
-                        // Get handles to the elements
-                        let top_toggle = self2.top_toggle.hwnd();
-                        let refresh_btn = self2.refresh_btn.hwnd();
-                        let help_btn = self2.help_btn.hwnd();
-                        let fullscreenize_btn = self2.fullscreenize_btn.hwnd();
-
-                        wnd.UpdateWindow().ok();
-                        check_theme_checkbox(top_toggle);
-                        check_theme_btn(refresh_btn);
-                        check_theme_btn(help_btn);
-                        check_theme_btn(fullscreenize_btn);
-                        // Check again as both applying dark mode and the check can randomly fail
-                        wnd.UpdateWindow().ok();
-                        check_theme_checkbox(top_toggle);
-                        check_theme_btn(refresh_btn);
-                        check_theme_btn(help_btn);
-                        check_theme_btn(fullscreenize_btn);
-                    }
                 }
 
                 // Call the default window procedure
@@ -851,62 +828,6 @@ fn enable_dark_mode_for_element(element: &w::HWND) {
         .SetWindowTheme("DarkMode_Explorer", None)
         .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
         .ok();
-}
-
-fn check_theme_btn(element: &w::HWND) {
-    // Get color of the element
-    let color = unsafe {
-        GetPixel(
-            HDC(element.GetDC().unwrap().leak().ptr()), // TODO: Unwrap correctly
-            3,
-            3,
-        )
-    }
-    .0;
-
-    // Return if the color is CLR_INVALID
-    if color == 0xFFFFFFFF {
-        return;
-    }
-
-    // Split the color into red, green, and blue values
-    let rgb = [color as u8, (color >> 8) as u8, (color >> 16) as u8];
-
-    // Check if the color is grayscale and is not the default color
-    // The default color is set manually, and could cause issues down the line
-    // A grayscale color is a color where the red, green, and blue values are the same
-    if !rgb.iter().all(|&x| x == rgb[0] && x != 0xFD) {
-        // Try applying the theme again
-        enable_dark_mode_for_element(element);
-    }
-}
-
-fn check_theme_checkbox(element: &w::HWND) {
-    // Get color of the element
-    let color = unsafe {
-        GetPixel(
-            HDC(element.GetDC().unwrap().leak().ptr()), // TODO: Unwrap correctly
-            3,
-            3,
-        )
-    }
-    .0;
-
-    // Return if the color is CLR_INVALID
-    if color == 0xFFFFFFFF {
-        return;
-    }
-
-    // Split the color into red, green, and blue values
-    let rgb = [color as u8, (color >> 8) as u8, (color >> 16) as u8];
-
-    // Check if the color is grayscale and is not the default color
-    // The default color is set manually, and could cause issues down the line
-    // A grayscale color is a color where the red, green, and blue values are the same
-    if !rgb.iter().all(|&x| x == rgb[0] && x != 0xF3) {
-        // Try applying the theme again
-        enable_dark_mode_for_element(element);
-    }
 }
 
 fn show_error_message(message: &str) {
