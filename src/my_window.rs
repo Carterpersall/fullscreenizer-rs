@@ -19,10 +19,7 @@ use winsafe::co::{COLOR, SWP};
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
-use winsafe::prelude::{
-    advapi_Hkey, comctl_Himagelist, comctl_Hwnd, gdi_Hbrush, gdi_Hdc, gdi_Hfont, user_Hmonitor,
-    user_Hwnd, GuiNativeControlEvents, GuiParent, GuiWindow, Handle,
-};
+use winsafe::prelude::{advapi_Hkey, comctl_Himagelist, comctl_Hwnd, gdi_Hbrush, gdi_Hdc, gdi_Hfont, user_Hmonitor, user_Hwnd, GuiNativeControl, GuiNativeControlEvents, GuiParent, GuiWindow, Handle};
 use winsafe::{
     self as w, co, gui, AdjustWindowRectEx, EnumWindows, GetLastError, HwndPlace, COLORREF, HBRUSH,
     HICON, HIMAGELIST, POINT, RECT, SIZE,
@@ -128,6 +125,7 @@ impl MyWindow {
                 position: (13, 368),
                 // Move anchored at right/bottom as parent window resizes.
                 resize_behavior: (gui::Horz::None, gui::Vert::Repos),
+                window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
         );
@@ -139,6 +137,7 @@ impl MyWindow {
                 position: (108, 368),
                 // Move anchored at right/bottom as parent window resizes.
                 resize_behavior: (gui::Horz::None, gui::Vert::Repos),
+                window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
         );
@@ -150,6 +149,7 @@ impl MyWindow {
                 position: (202, 368),
                 // Move anchored at right/bottom as parent window resizes.
                 resize_behavior: (gui::Horz::Repos, gui::Vert::Repos),
+                window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
         );
@@ -669,6 +669,18 @@ impl MyWindow {
         // Create a vector in a mutex to store the open windows
         let windows: Arc<Mutex<Vec<w::HWND>>> = Arc::new(Mutex::new(Vec::new()));
 
+        self.refresh_btn.on_subclass().wm_paint({
+            let self2 = self.clone();
+            move || {
+                // Make the undrawn area of the button transparent
+                self2.refresh_btn.hwnd().SetLayeredWindowAttributes(COLORREF::new(0xF0, 0xF0, 0xF0), 255, co::LWA::COLORKEY)?;
+
+                unsafe { self2.refresh_btn.hwnd().DefSubclassProc(Paint {}) };
+
+                Ok(())
+            }
+        });
+
         self.refresh_btn.on().bn_clicked({
             let self2 = self.clone();
             let windows = windows.clone();
@@ -691,11 +703,35 @@ impl MyWindow {
                 Ok(())
             }
         });
+        
+        self.help_btn.on_subclass().wm_paint({
+            let self2 = self.clone();
+            move || {
+                // Make the undrawn area of the button transparent
+                self2.help_btn.hwnd().SetLayeredWindowAttributes(COLORREF::new(0xF0, 0xF0, 0xF0), 255, co::LWA::COLORKEY)?;
+                
+                unsafe { self2.help_btn.hwnd().DefSubclassProc(Paint {}) };
+                
+                Ok(())
+            }
+        });
 
         self.help_btn.on().bn_clicked({
             move || {
                 // TODO: Maybe replace with settings
                 show_help_message();
+                Ok(())
+            }
+        });
+        
+        self.fullscreenize_btn.on_subclass().wm_paint({
+            let self2 = self.clone();
+            move || {
+                // Make the undrawn area of the button transparent
+                self2.fullscreenize_btn.hwnd().SetLayeredWindowAttributes(COLORREF::new(0xF0, 0xF0, 0xF0), 255, co::LWA::COLORKEY)?;
+                
+                unsafe { self2.fullscreenize_btn.hwnd().DefSubclassProc(Paint {}) };
+                
                 Ok(())
             }
         });
