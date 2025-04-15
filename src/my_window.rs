@@ -9,11 +9,9 @@ use std::sync::{Mutex, MutexGuard};
 use windows::core::BOOL;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
-use windows::Win32::UI::WindowsAndMessaging::{
-    SetClassLongPtrW, GCLP_HBRBACKGROUND, ICON_SMALL, WS_POPUP, WS_VISIBLE,
-};
+use windows::Win32::UI::WindowsAndMessaging::{ICON_SMALL, WS_POPUP, WS_VISIBLE};
 
-use winsafe::co::{COLOR, SWP};
+use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
@@ -206,15 +204,6 @@ impl MyWindow {
         enable_dark_mode_for_element(self.refresh_btn.hwnd());
         enable_dark_mode_for_element(self.help_btn.hwnd());
         enable_dark_mode_for_element(self.fullscreenize_btn.hwnd());
-
-        // Set the background color of the window
-        unsafe {
-            SetClassLongPtrW(
-                hwnd,
-                GCLP_HBRBACKGROUND,
-                HBRUSH::from_sys_color(COLOR::WINDOWTEXT).ptr() as isize,
-            )
-        };
 
         // Set the background color of the listview
         unsafe {
@@ -464,6 +453,12 @@ impl MyWindow {
                         None,
                         (),
                     );
+
+                    // Paint the buttons to ensure they are visible initially
+                    // Without this, the buttons are not visible until they are updated by hovering over them
+                    self2.refresh_btn.hwnd().InvalidateRect(None, true)?;
+                    self2.help_btn.hwnd().InvalidateRect(None, true)?;
+                    self2.fullscreenize_btn.hwnd().InvalidateRect(None, true)?;
                 }
 
                 // Call the default window procedure
@@ -628,6 +623,28 @@ impl MyWindow {
 
                 // Set the color of the rest of the element's background
                 Ok(HBRUSH::CreateSolidBrush(color).unwrap().leak()) // TODO: Unwrap correctly
+            }
+        });
+
+        self.wnd.on().wm_erase_bkgnd({
+            let self2 = self.clone();
+            move |erase_bkgnd| -> w::AnyResult<i32> {
+                // Set the background color of the window in dark mode
+                if self2.is_dark_mode.lock().unwrap().to_owned() {
+                    // TODO: Unwrap correctly
+                    // Paint a custom background color
+                    erase_bkgnd.hdc.FillRect(
+                        self2.wnd.hwnd().GetClientRect()?,
+                        &HBRUSH::CreateSolidBrush(COLORREF::new(0x1E, 0x1E, 0x1E))?.leak(),
+                    )?;
+
+                    Ok(1)
+                } else {
+                    // Call the default window procedure
+                    unsafe { self2.wnd.hwnd().DefWindowProc(erase_bkgnd) };
+
+                    Ok(0)
+                }
             }
         });
 
