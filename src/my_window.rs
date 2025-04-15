@@ -6,11 +6,10 @@ use core::mem::size_of;
 use std::ops::Shr;
 use std::sync::{Mutex, MutexGuard};
 
-use windows::core::{BOOL, PCWSTR};
+use windows::core::BOOL;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
 use windows::Win32::Graphics::Gdi::{GetPixel, HDC};
-use windows::Win32::UI::Controls::SetWindowTheme;
 use windows::Win32::UI::WindowsAndMessaging::{
     SetClassLongPtrW, GCLP_HBRBACKGROUND, ICON_SMALL, WS_POPUP, WS_VISIBLE,
 };
@@ -19,7 +18,11 @@ use winsafe::co::{COLOR, SWP};
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
-use winsafe::prelude::{advapi_Hkey, comctl_Himagelist, comctl_Hwnd, gdi_Hbrush, gdi_Hdc, gdi_Hfont, user_Hmonitor, user_Hwnd, GuiNativeControl, GuiNativeControlEvents, GuiParent, GuiWindow, Handle};
+use winsafe::prelude::{
+    advapi_Hkey, comctl_Himagelist, comctl_Hwnd, gdi_Hbrush, gdi_Hdc, gdi_Hfont, user_Hmonitor,
+    user_Hwnd, uxtheme_Hwnd, GuiNativeControl, GuiNativeControlEvents, GuiParent, GuiWindow,
+    Handle,
+};
 use winsafe::{
     self as w, co, gui, AdjustWindowRectEx, EnumWindows, GetLastError, HwndPlace, COLORREF, HBRUSH,
     HICON, HIMAGELIST, POINT, RECT, SIZE,
@@ -340,16 +343,11 @@ impl MyWindow {
             .ok();
 
             // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
-            let listview = HWND(self.process_list.hwnd().ptr());
-            unsafe {
-                SetWindowTheme(
-                    listview,
-                    PCWSTR("Explorer".encode_utf16().collect::<Vec<u16>>().as_ptr()),
-                    PCWSTR(core::ptr::null()),
-                )
-            }
-            .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
-            .ok();
+            self.process_list
+                .hwnd()
+                .SetWindowTheme("Explorer", None)
+                .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
+                .ok();
         }
     }
 
@@ -673,7 +671,11 @@ impl MyWindow {
             let self2 = self.clone();
             move || {
                 // Make the undrawn area of the button transparent
-                self2.refresh_btn.hwnd().SetLayeredWindowAttributes(COLORREF::new(0xF0, 0xF0, 0xF0), 255, co::LWA::COLORKEY)?;
+                self2.refresh_btn.hwnd().SetLayeredWindowAttributes(
+                    COLORREF::new(0xF0, 0xF0, 0xF0),
+                    255,
+                    co::LWA::COLORKEY,
+                )?;
 
                 unsafe { self2.refresh_btn.hwnd().DefSubclassProc(Paint {}) };
 
@@ -708,7 +710,11 @@ impl MyWindow {
             let self2 = self.clone();
             move || {
                 // Make the undrawn area of the button transparent
-                self2.help_btn.hwnd().SetLayeredWindowAttributes(COLORREF::new(0xF0, 0xF0, 0xF0), 255, co::LWA::COLORKEY)?;
+                self2.help_btn.hwnd().SetLayeredWindowAttributes(
+                    COLORREF::new(0xF0, 0xF0, 0xF0),
+                    255,
+                    co::LWA::COLORKEY,
+                )?;
 
                 unsafe { self2.help_btn.hwnd().DefSubclassProc(Paint {}) };
 
@@ -728,7 +734,11 @@ impl MyWindow {
             let self2 = self.clone();
             move || {
                 // Make the undrawn area of the button transparent
-                self2.fullscreenize_btn.hwnd().SetLayeredWindowAttributes(COLORREF::new(0xF0, 0xF0, 0xF0), 255, co::LWA::COLORKEY)?;
+                self2.fullscreenize_btn.hwnd().SetLayeredWindowAttributes(
+                    COLORREF::new(0xF0, 0xF0, 0xF0),
+                    255,
+                    co::LWA::COLORKEY,
+                )?;
 
                 unsafe { self2.fullscreenize_btn.hwnd().DefSubclassProc(Paint {}) };
 
@@ -836,23 +846,11 @@ impl MyWindow {
 }
 
 fn enable_dark_mode_for_element(element: &w::HWND) {
-    let hwnd = HWND(element.ptr());
-
     // Enable dark mode on the element
-    unsafe {
-        SetWindowTheme(
-            hwnd,
-            PCWSTR(
-                "DarkMode_Explorer"
-                    .encode_utf16()
-                    .collect::<Vec<u16>>()
-                    .as_ptr(),
-            ),
-            PCWSTR(core::ptr::null()),
-        )
-    }
-    .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
-    .ok();
+    element
+        .SetWindowTheme("DarkMode_Explorer", None)
+        .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
+        .ok();
 }
 
 fn check_theme_btn(element: &w::HWND) {

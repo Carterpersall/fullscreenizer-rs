@@ -11,6 +11,7 @@ features = [
     "gui",
     "comctl",
     "user",
+    "uxtheme",
     "kernel"
 ]
 
@@ -23,10 +24,8 @@ version = "0.61.1"
 features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
-    "Win32_UI_Controls",
     "Win32_Graphics_Dwm",
-    "Win32_Graphics_Gdi",
-    "Win32_System_LibraryLoader"
+    "Win32_Graphics_Gdi"
 ]
 
 [profile.release]
