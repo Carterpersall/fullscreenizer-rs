@@ -24,6 +24,24 @@ use winsafe::{
     HICON, HIMAGELIST, POINT, RECT, SIZE,
 };
 
+/// Macro to handle the result of a mutex lock
+/// # Arguments
+/// * `result` - The result of the mutex lock
+/// # Returns
+/// * The dereferenced guard if the lock is successful, false otherwise
+/// * Prints an error message if the lock fails
+macro_rules! handle_lock_result {
+    ($result:expr) => {
+        match $result {
+            Ok(guard) => *guard,
+            Err(e) => {
+                eprintln!("Failed to lock mutex: {}", e);
+                false
+            }
+        }
+    };
+}
+
 #[derive(Clone)]
 pub struct MyWindow {
     wnd: gui::WindowMain,
@@ -197,7 +215,6 @@ impl MyWindow {
         .ok();
 
         // Enable dark mode on the elements in the window
-        wnd
             .SetWindowTheme("DarkMode_Explorer", None)
             .map_err(|e| eprintln!("SetWindowTheme on window failed: {}", e))
             .ok();
@@ -456,12 +473,13 @@ impl MyWindow {
             move || -> w::AnyResult<()> {
                 // Get a handle to the window
                 let wnd = self2.wnd.hwnd();
+                let first_paint = first_paint.clone();
 
                 // Check if this is the first paint event
-                if first_paint.lock().ok().unwrap().to_owned() {
-                    // TODO: Unwrap correctly
-                    // TODO: Surely there is a better way to do this
-                    *first_paint.lock().ok().unwrap() = false;
+                if handle_lock_result!(first_paint.lock()) {
+                            *first_paint = false;
+                        },
+                    );
 
                     // Add text to the checkbox listview
                     self2.top_toggle.items().add(
@@ -627,6 +645,7 @@ impl MyWindow {
 
                 if self2.is_dark_mode.lock().unwrap().to_owned() {
                     // TODO: Unwrap correctly
+                if handle_lock_result!(self2.is_dark_mode.lock()) {
                     // Set the text color of the label to white
                     ctl.hdc.SetTextColor(color).unwrap(); // TODO: Unwrap correctly
 
