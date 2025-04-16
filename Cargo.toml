@@ -23,7 +23,6 @@ features = [
 version = "0.61.1"
 features = [
     "Win32_Foundation",
-    "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Dwm"
 ]
 

@@ -9,7 +9,6 @@ use std::sync::{Mutex, MutexGuard};
 use windows::core::BOOL;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
-use windows::Win32::UI::WindowsAndMessaging::{ICON_SMALL, WS_POPUP, WS_VISIBLE};
 
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
@@ -393,7 +392,7 @@ impl MyWindow {
                 let icon = match unsafe {
                     HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
                         co::WM::GETICON,
-                        ICON_SMALL as usize,
+                        co::ICON_SZ::SMALL.raw() as usize,
                         0,
                     )) as *mut _)
                 } {
@@ -806,7 +805,7 @@ impl MyWindow {
                 };
 
                 // Set the window style
-                if unsafe { window.SetWindowLongPtr(co::GWLP::STYLE, (WS_POPUP.0 | WS_VISIBLE.0) as isize) } == 0 {
+                if unsafe { window.SetWindowLongPtr(co::GWLP::STYLE, (co::WS::POPUP.raw() | co::WS::VISIBLE.raw()) as isize) } == 0 {
                     show_error_message(&format!("Failed to fullscreenize window - SetWindowLongPtr failed with error: {}", GetLastError()));
                     return Ok(());
                 }
