@@ -215,7 +215,7 @@ impl MyWindow {
         .ok();
 
         // Enable dark mode on the elements in the window
-            .SetWindowTheme("DarkMode_Explorer", None)
+        wnd.SetWindowTheme("DarkMode_Explorer", None)
             .map_err(|e| eprintln!("SetWindowTheme on window failed: {}", e))
             .ok();
         process_list
@@ -477,6 +477,13 @@ impl MyWindow {
 
                 // Check if this is the first paint event
                 if handle_lock_result!(first_paint.lock()) {
+                    first_paint.lock().map_or_else(
+                        |e| {
+                            show_error_message(
+                                format!("Failed to lock first_paint mutex: {}", e).as_str(),
+                            );
+                        },
+                        |mut first_paint| {
                             *first_paint = false;
                         },
                     );
@@ -643,8 +650,6 @@ impl MyWindow {
                 // Light mode background color and dark mode text color
                 let mut color = COLORREF::new(0xF0, 0xF0, 0xF0);
 
-                if self2.is_dark_mode.lock().unwrap().to_owned() {
-                    // TODO: Unwrap correctly
                 if handle_lock_result!(self2.is_dark_mode.lock()) {
                     // Set the text color of the label to white
                     ctl.hdc.SetTextColor(color).unwrap(); // TODO: Unwrap correctly
@@ -665,8 +670,7 @@ impl MyWindow {
             let self2 = self.clone();
             move |erase_bkgnd| -> w::AnyResult<i32> {
                 // Set the background color of the window in dark mode
-                if self2.is_dark_mode.lock().unwrap().to_owned() {
-                    // TODO: Unwrap correctly
+                if handle_lock_result!(self2.is_dark_mode.lock()) {
                     // Paint a custom background color
                     erase_bkgnd.hdc.FillRect(
                         self2.wnd.hwnd().GetClientRect()?,
@@ -874,7 +878,11 @@ impl MyWindow {
     }
 }
 
-
+/// Function to show an error message in a popup window
+/// # Arguments
+/// * `message` - The error message to display
+/// # Returns
+/// * None
 fn show_error_message(message: &str) {
     // Show a popup window with the error message
     w::HWND::NULL
@@ -889,6 +897,7 @@ fn show_error_message(message: &str) {
         .ok();
 }
 
+/// Function to show a help message in a popup window
 fn show_help_message() {
     // Show a popup window with the help message
     // TODO: Create custom window so dark mode can be implemented
