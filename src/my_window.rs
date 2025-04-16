@@ -198,12 +198,29 @@ impl MyWindow {
         .ok();
 
         // Enable dark mode on the elements in the window
-        // Calling SetWindowTheme in too quick succession can cause the theme to not be applied
-        enable_dark_mode_for_element(wnd);
-        enable_dark_mode_for_element(process_list);
-        enable_dark_mode_for_element(self.refresh_btn.hwnd());
-        enable_dark_mode_for_element(self.help_btn.hwnd());
-        enable_dark_mode_for_element(self.fullscreenize_btn.hwnd());
+        wnd
+            .SetWindowTheme("DarkMode_Explorer", None)
+            .map_err(|e| eprintln!("SetWindowTheme on window failed: {}", e))
+            .ok();
+        process_list
+            .SetWindowTheme("DarkMode_Explorer", None)
+            .map_err(|e| eprintln!("SetWindowTheme on process list failed: {}", e))
+            .ok();
+        self.refresh_btn
+            .hwnd()
+            .SetWindowTheme("DarkMode_Explorer", None)
+            .map_err(|e| eprintln!("SetWindowTheme on refresh button failed: {}", e))
+            .ok();
+        self.help_btn
+            .hwnd()
+            .SetWindowTheme("DarkMode_Explorer", None)
+            .map_err(|e| eprintln!("SetWindowTheme on help button failed: {}", e))
+            .ok();
+        self.fullscreenize_btn
+            .hwnd()
+            .SetWindowTheme("DarkMode_Explorer", None)
+            .map_err(|e| eprintln!("SetWindowTheme on fullscreenize button failed: {}", e))
+            .ok();
 
         // Set the background color of the listview
         unsafe {
@@ -839,13 +856,6 @@ impl MyWindow {
     }
 }
 
-fn enable_dark_mode_for_element(element: &w::HWND) {
-    // Enable dark mode on the element
-    element
-        .SetWindowTheme("DarkMode_Explorer", None)
-        .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
-        .ok();
-}
 
 fn show_error_message(message: &str) {
     // Show a popup window with the error message
