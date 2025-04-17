@@ -140,8 +140,6 @@ impl MyWindow {
             gui::ButtonOpts {
                 text: "&Refresh".to_owned(),
                 position: (13, 368),
-                // Move anchored at right/bottom as parent window resizes.
-                resize_behavior: (gui::Horz::None, gui::Vert::Repos),
                 window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
@@ -152,8 +150,6 @@ impl MyWindow {
             gui::ButtonOpts {
                 text: "&Help".to_owned(),
                 position: (108, 368),
-                // Move anchored at right/bottom as parent window resizes.
-                resize_behavior: (gui::Horz::None, gui::Vert::Repos),
                 window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
@@ -164,8 +160,6 @@ impl MyWindow {
             gui::ButtonOpts {
                 text: "&Fullscreenize".to_owned(),
                 position: (202, 368),
-                // Move anchored at right/bottom as parent window resizes.
-                resize_behavior: (gui::Horz::Repos, gui::Vert::Repos),
                 window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
@@ -271,7 +265,7 @@ impl MyWindow {
         // Set the background color of the checkbox listview to the same as the window background
         unsafe {
             top_toggle.SendMessage(SetBkColor {
-                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //0x6D, 0x6D, 0x6D)),
+                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)),
             })
         }
         .map_err(|e| eprintln!("SetBkColor failed: {}", e))
@@ -280,7 +274,7 @@ impl MyWindow {
         // Set the background color of the element in the checkbox listview
         unsafe {
             top_toggle.SendMessage(SetTextBkColor {
-                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)), //(0x6D, 0x6D, 0x6D)),
+                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)),
             })
         }
         .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
@@ -592,6 +586,7 @@ impl MyWindow {
                 };
 
                 // Resize and center align the help button
+                // TODO: Fix the buttons wobbling when resizing vertically from the top border
                 self2
                     .help_btn
                     .hwnd()
@@ -646,23 +641,37 @@ impl MyWindow {
 
         self.wnd.on().wm_ctl_color_static({
             let self2 = self.clone();
-            move |ctl| -> w::AnyResult<HBRUSH> {
+            move |ctl| {
                 // Light mode background color and dark mode text color
                 let mut color = COLORREF::new(0xF0, 0xF0, 0xF0);
 
                 if handle_lock_result!(self2.is_dark_mode.lock()) {
                     // Set the text color of the label to white
-                    ctl.hdc.SetTextColor(color).unwrap(); // TODO: Unwrap correctly
+                    let _old_color = ctl
+                        .hdc
+                        .SetTextColor(color)
+                        .map_err(|e| eprintln!("SetTextColor on the label failed: {}", e));
 
                     // Set the color to the dark mode background color
-                    color = COLORREF::new(0x1E, 0x1E, 0x1E); //0x6D, 0x6D, 0x6D);
+                    color = COLORREF::new(0x1E, 0x1E, 0x1E);
                 }
 
                 // Set the background color of the label
-                ctl.hdc.SetBkColor(color).unwrap(); // TODO: Unwrap correctly
+                let _old_bk_color = ctl
+                    .hdc
+                    .SetBkColor(color)
+                    .map_err(|e| eprintln!("SetBkColor on the label failed: {}", e));
 
                 // Set the color of the rest of the element's background
-                Ok(HBRUSH::CreateSolidBrush(color).unwrap().leak()) // TODO: Unwrap correctly
+                HBRUSH::CreateSolidBrush(color).map_or_else(
+                    |e| {
+                        eprintln!("CreateSolidBrush for the label failed: {}", e);
+                        Ok(HBRUSH::NULL)
+                    },
+                    |mut brush| {
+                        Ok(brush.leak()) // TODO: Does this leak the brush?
+                    },
+                )
             }
         });
 
