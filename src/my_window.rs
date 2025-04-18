@@ -478,9 +478,15 @@ impl MyWindow {
 
                     // Paint the buttons to ensure they are visible initially
                     // Without this, the buttons are not visible until they are updated by hovering over them
-                    self2.refresh_btn.hwnd().InvalidateRect(None, true)?;
-                    self2.help_btn.hwnd().InvalidateRect(None, true)?;
-                    self2.fullscreenize_btn.hwnd().InvalidateRect(None, true)?;
+                    self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {}", e)
+                    }).ok();
+                    self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {}", e)
+                    }).ok();
+                    self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {}", e)
+                    }).ok();
                 }
 
                 // Call the default window procedure
@@ -702,21 +708,34 @@ impl MyWindow {
                 // Set the background color of the window in dark mode
                 if handle_lock_result!(self2.is_dark_mode.lock()) {
                     // Create a solid brush with the dark mode background color
-                    // TODO: Stop using ? to handle errors, it makes issues harder to debug
-                    let hbrush = HBRUSH::CreateSolidBrush(COLORREF::new(0x1E, 0x1E, 0x1E))?;
+                    match HBRUSH::CreateSolidBrush(COLORREF::new(0x1E, 0x1E, 0x1E)) {
+                        Ok(hbrush) => {
+                            match self2.wnd.hwnd().GetClientRect() {
+                                Ok(rect) => {
+                                    // Set the background color of the window
+                                    erase_bkgnd
+                                        .hdc
+                                        .FillRect(rect, &hbrush)
+                                        .map_err(|e| eprintln!("FillRect failed: {}", e))
+                                        .ok();
 
-                    // Paint a custom background color
-                    erase_bkgnd
-                        .hdc
-                        .FillRect(self2.wnd.hwnd().GetClientRect()?, &hbrush)?;
-
-                    Ok(1)
-                } else {
-                    // Call the default window procedure
-                    unsafe { self2.wnd.hwnd().DefWindowProc(erase_bkgnd) };
-
-                    Ok(0)
+                                    return Ok(1);
+                                }
+                                Err(e) => {
+                                    eprintln!("GetClientRect failed: {}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("CreateSolidBrush failed: {}", e);
+                        }
+                    }
                 }
+
+                // Call the default window procedure
+                unsafe { self2.wnd.hwnd().DefWindowProc(erase_bkgnd) };
+
+                Ok(0)
             }
         });
 
@@ -737,11 +756,18 @@ impl MyWindow {
             let self2 = self.clone();
             move || {
                 // Make the undrawn area of the button transparent
-                self2.refresh_btn.hwnd().SetLayeredWindowAttributes(
-                    COLORREF::new(0xF0, 0xF0, 0xF0),
-                    255,
-                    co::LWA::COLORKEY,
-                )?;
+                self2
+                    .refresh_btn
+                    .hwnd()
+                    .SetLayeredWindowAttributes(
+                        COLORREF::new(0xF0, 0xF0, 0xF0),
+                        255,
+                        co::LWA::COLORKEY,
+                    )
+                    .map_err(|e| {
+                        eprintln!("SetLayeredWindowAttributes on refresh button failed: {}", e)
+                    })
+                    .ok();
 
                 unsafe { self2.refresh_btn.hwnd().DefSubclassProc(Paint {}) };
 
@@ -776,11 +802,18 @@ impl MyWindow {
             let self2 = self.clone();
             move || {
                 // Make the undrawn area of the button transparent
-                self2.help_btn.hwnd().SetLayeredWindowAttributes(
-                    COLORREF::new(0xF0, 0xF0, 0xF0),
-                    255,
-                    co::LWA::COLORKEY,
-                )?;
+                self2
+                    .help_btn
+                    .hwnd()
+                    .SetLayeredWindowAttributes(
+                        COLORREF::new(0xF0, 0xF0, 0xF0),
+                        255,
+                        co::LWA::COLORKEY,
+                    )
+                    .map_err(|e| {
+                        eprintln!("SetLayeredWindowAttributes on help button failed: {}", e)
+                    })
+                    .ok();
 
                 unsafe { self2.help_btn.hwnd().DefSubclassProc(Paint {}) };
 
@@ -800,11 +833,21 @@ impl MyWindow {
             let self2 = self.clone();
             move || {
                 // Make the undrawn area of the button transparent
-                self2.fullscreenize_btn.hwnd().SetLayeredWindowAttributes(
-                    COLORREF::new(0xF0, 0xF0, 0xF0),
-                    255,
-                    co::LWA::COLORKEY,
-                )?;
+                self2
+                    .fullscreenize_btn
+                    .hwnd()
+                    .SetLayeredWindowAttributes(
+                        COLORREF::new(0xF0, 0xF0, 0xF0),
+                        255,
+                        co::LWA::COLORKEY,
+                    )
+                    .map_err(|e| {
+                        eprintln!(
+                            "SetLayeredWindowAttributes on fullscreenize button failed: {}",
+                            e,
+                        )
+                    })
+                    .ok();
 
                 unsafe { self2.fullscreenize_btn.hwnd().DefSubclassProc(Paint {}) };
 
