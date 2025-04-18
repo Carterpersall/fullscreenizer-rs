@@ -330,15 +330,6 @@ impl MyWindow {
             // Enable dark mode on the window
             self.enable_dark_mode();
         } else {
-            // Set the background of the label to the same as the window background
-            unsafe {
-                self.label.hwnd().SendMessage(SetBkColor {
-                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                })
-            }
-            .map_err(|e| eprintln!("SetBkColor failed: {}", e))
-            .ok();
-
             // Set the background color of the checkbox listview to the same as the window background
             unsafe {
                 self.top_toggle.hwnd().SendMessage(SetBkColor {
@@ -427,14 +418,10 @@ impl MyWindow {
                 };
 
                 // Add the icon to the image list
-                Option::from(
-                    image_list
-                        .AddIcon(&icon) // TODO: Does this leak the icon?
-                        .unwrap_or_else(|e| {
-                            eprintln!("AddIcon failed {}\n", e);
-                            u32::MAX
-                        }),
-                )
+                Option::from(image_list.AddIcon(&icon).unwrap_or_else(|e| {
+                    eprintln!("AddIcon failed {}\n", e);
+                    u32::MAX
+                }))
             } else {
                 None
             };
@@ -547,6 +534,16 @@ impl MyWindow {
             }
         });
 
+        self.wnd.on().wm_get_min_max_info({
+            move |min_max| {
+                // Set the minimum size of the window
+                min_max.info.ptMinTrackSize.x = 305;
+                min_max.info.ptMinTrackSize.y = 200;
+
+                Ok(())
+            }
+        });
+
         self.wnd.on().wm_size({
             let self2 = self.clone();
             move |size| -> w::AnyResult<()> {
@@ -639,6 +636,8 @@ impl MyWindow {
             }
         });
 
+        // Stores the brush used to paint the label's background
+        let label_hbrush: Arc<Mutex<HBRUSH>> = Arc::new(Mutex::new(HBRUSH::NULL));
         self.wnd.on().wm_ctl_color_static({
             let self2 = self.clone();
             move |ctl| {
@@ -656,22 +655,44 @@ impl MyWindow {
                     color = COLORREF::new(0x1E, 0x1E, 0x1E);
                 }
 
-                // Set the background color of the label
+                // Set the background color of the label's text
                 let _old_bk_color = ctl
                     .hdc
                     .SetBkColor(color)
                     .map_err(|e| eprintln!("SetBkColor on the label failed: {}", e));
 
-                // Set the color of the rest of the element's background
-                HBRUSH::CreateSolidBrush(color).map_or_else(
+                // If the brush in the Arc Mutex is NULL, create a new solid brush
+                if label_hbrush.lock().map_or_else(
                     |e| {
-                        eprintln!("CreateSolidBrush for the label failed: {}", e);
-                        Ok(HBRUSH::NULL)
+                        eprintln!("Failed to lock label_hbrush mutex: {}", e);
+                        false
                     },
-                    |mut brush| {
-                        Ok(brush.leak()) // TODO: Does this leak the brush?
+                    |hbrush| *hbrush == HBRUSH::NULL,
+                ) {
+                    HBRUSH::CreateSolidBrush(color).map_or_else(
+                        |e| {
+                            eprintln!("CreateSolidBrush failed: {}", e);
+                        },
+                        |mut hbrush| {
+                            // Set the brush in the Arc Mutex
+                            label_hbrush.lock().map_or_else(
+                                |e| {
+                                    eprintln!("Failed to lock label_hbrush mutex: {}", e);
+                                },
+                                |mut hbr| *hbr = hbrush.leak(),
+                            );
+                        },
+                    );
+                }
+
+                // Set the background color of the label
+                Ok(label_hbrush.lock().map_or_else(
+                    |e| {
+                        eprintln!("Failed to lock label_hbrush mutex: {}", e);
+                        HBRUSH::NULL
                     },
-                )
+                    |hbrush| unsafe { hbrush.raw_copy() },
+                ))
             }
         });
 
@@ -680,11 +701,14 @@ impl MyWindow {
             move |erase_bkgnd| -> w::AnyResult<i32> {
                 // Set the background color of the window in dark mode
                 if handle_lock_result!(self2.is_dark_mode.lock()) {
+                    // Create a solid brush with the dark mode background color
+                    // TODO: Stop using ? to handle errors, it makes issues harder to debug
+                    let hbrush = HBRUSH::CreateSolidBrush(COLORREF::new(0x1E, 0x1E, 0x1E))?;
+
                     // Paint a custom background color
-                    erase_bkgnd.hdc.FillRect(
-                        self2.wnd.hwnd().GetClientRect()?,
-                        &HBRUSH::CreateSolidBrush(COLORREF::new(0x1E, 0x1E, 0x1E))?.leak(),
-                    )?;
+                    erase_bkgnd
+                        .hdc
+                        .FillRect(self2.wnd.hwnd().GetClientRect()?, &hbrush)?;
 
                     Ok(1)
                 } else {
