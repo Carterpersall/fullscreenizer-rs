@@ -15,10 +15,6 @@ features = [
     "kernel"
 ]
 
-#[dependencies.tokio]
-#version = "1.37.0"
-#features = ["full"]
-
 [dependencies.windows]
 version = "0.61.1"
 features = [

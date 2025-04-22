@@ -28,15 +28,15 @@ use winsafe::{
 /// # Arguments
 /// * `result` - The result of the mutex lock
 /// # Returns
-/// * The dereferenced guard if the lock is successful, false otherwise
-/// * Prints an error message if the lock fails
+/// * If the lock is successful, returns Some(guard)
+/// * If the lock fails, prints an error message and returns None
 macro_rules! handle_lock_result {
     ($result:expr) => {
         match $result {
-            Ok(guard) => *guard,
+            Ok(guard) => Some(guard),
             Err(e) => {
                 eprintln!("Failed to lock mutex: {}", e);
-                false
+                None
             }
         }
     };
@@ -291,16 +291,8 @@ impl MyWindow {
     }
 
     fn set_system_theme(&self) {
-        let mut is_dark_mode = match self.is_dark_mode.lock() {
-            Ok(is_dark_mode) => is_dark_mode,
-            Err(e) => {
-                eprintln!("Failed to get dark mode status - Mutex lock failed: {}", e);
-                return;
-            }
-        };
-
         // Check if dark mode is enabled using the registry
-        if !is_dark_mode.to_owned() {
+        if let Some(mut is_dark_mode) = handle_lock_result!(self.is_dark_mode.lock()) {
             *is_dark_mode = w::HKEY::CURRENT_USER
                 .RegOpenKeyEx(
                     Some("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
@@ -325,35 +317,35 @@ impl MyWindow {
                         }
                     },
                 );
-        }
-        if is_dark_mode.to_owned() {
-            // Enable dark mode on the window
-            self.enable_dark_mode();
-        } else {
-            // Set the background color of the checkbox listview to the same as the window background
-            unsafe {
-                self.top_toggle.hwnd().SendMessage(SetBkColor {
-                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                })
-            }
-            .map_err(|e| eprintln!("SetBkColor failed: {}", e))
-            .ok();
-
-            // Set the background color of the element in the checkbox listview
-            unsafe {
-                self.top_toggle.hwnd().SendMessage(SetTextBkColor {
-                    color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
-                })
-            }
-            .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
-            .ok();
-
-            // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
-            self.process_list
-                .hwnd()
-                .SetWindowTheme("Explorer", None)
-                .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
+            if is_dark_mode.to_owned() {
+                // Enable dark mode on the window
+                self.enable_dark_mode();
+            } else {
+                // Set the background color of the checkbox listview to the same as the window background
+                unsafe {
+                    self.top_toggle.hwnd().SendMessage(SetBkColor {
+                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                    })
+                }
+                .map_err(|e| eprintln!("SetBkColor failed: {}", e))
                 .ok();
+
+                // Set the background color of the element in the checkbox listview
+                unsafe {
+                    self.top_toggle.hwnd().SendMessage(SetTextBkColor {
+                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                    })
+                }
+                .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
+                .ok();
+
+                // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
+                self.process_list
+                    .hwnd()
+                    .SetWindowTheme("Explorer", None)
+                    .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
+                    .ok();
+            }
         }
     }
 
@@ -454,20 +446,10 @@ impl MyWindow {
             move || -> w::AnyResult<()> {
                 // Get a handle to the window
                 let wnd = self2.wnd.hwnd();
-                let first_paint = first_paint.clone();
 
                 // Check if this is the first paint event
-                if handle_lock_result!(first_paint.lock()) {
-                    first_paint.lock().map_or_else(
-                        |e| {
-                            show_error_message(
-                                format!("Failed to lock first_paint mutex: {}", e).as_str(),
-                            );
-                        },
-                        |mut first_paint| {
-                            *first_paint = false;
-                        },
-                    );
+                if let Some(mut first_paint) = handle_lock_result!(first_paint.clone().lock()) {
+                    *first_paint = false;
 
                     // Add text to the checkbox listview
                     self2.top_toggle.items().add(
@@ -650,15 +632,17 @@ impl MyWindow {
                 // Light mode background color and dark mode text color
                 let mut color = COLORREF::new(0xF0, 0xF0, 0xF0);
 
-                if handle_lock_result!(self2.is_dark_mode.lock()) {
-                    // Set the text color of the label to white
-                    let _old_color = ctl
-                        .hdc
-                        .SetTextColor(color)
-                        .map_err(|e| eprintln!("SetTextColor on the label failed: {}", e));
+                if let Some(is_dark_mode) = handle_lock_result!(self2.is_dark_mode.lock()) {
+                    if *is_dark_mode {
+                        // Set the text color of the label to white
+                        let _old_color = ctl
+                            .hdc
+                            .SetTextColor(color)
+                            .map_err(|e| eprintln!("SetTextColor on the label failed: {}", e));
 
-                    // Set the color to the dark mode background color
-                    color = COLORREF::new(0x1E, 0x1E, 0x1E);
+                        // Set the color to the dark mode background color
+                        color = COLORREF::new(0x1E, 0x1E, 0x1E);
+                    }
                 }
 
                 // Set the background color of the label's text
@@ -668,37 +652,23 @@ impl MyWindow {
                     .map_err(|e| eprintln!("SetBkColor on the label failed: {}", e));
 
                 // If the brush in the Arc Mutex is NULL, create a new solid brush
-                if label_hbrush.lock().map_or_else(
-                    |e| {
-                        eprintln!("Failed to lock label_hbrush mutex: {}", e);
-                        false
-                    },
-                    |hbrush| *hbrush == HBRUSH::NULL,
-                ) {
-                    HBRUSH::CreateSolidBrush(color).map_or_else(
-                        |e| {
-                            eprintln!("CreateSolidBrush failed: {}", e);
-                        },
-                        |mut hbrush| {
-                            // Set the brush in the Arc Mutex
-                            label_hbrush.lock().map_or_else(
-                                |e| {
-                                    eprintln!("Failed to lock label_hbrush mutex: {}", e);
-                                },
-                                |mut hbr| *hbr = hbrush.leak(),
-                            );
-                        },
-                    );
+                if let Some(mut label_hbrush) = handle_lock_result!(label_hbrush.lock()) {
+                    if *label_hbrush == HBRUSH::NULL {
+                        HBRUSH::CreateSolidBrush(color).map_or_else(
+                            |e| {
+                                eprintln!("CreateSolidBrush failed: {}", e);
+                            },
+                            |mut hbrush| {
+                                // Set the brush in the Arc Mutex
+                                *label_hbrush = hbrush.leak();
+                            },
+                        );
+                    }
                 }
 
                 // Set the background color of the label
-                Ok(label_hbrush.lock().map_or_else(
-                    |e| {
-                        eprintln!("Failed to lock label_hbrush mutex: {}", e);
-                        HBRUSH::NULL
-                    },
-                    |hbrush| unsafe { hbrush.raw_copy() },
-                ))
+                Ok(handle_lock_result!(label_hbrush.lock())
+                    .map_or(HBRUSH::NULL, |hbrush| unsafe { hbrush.raw_copy() }))
             }
         });
 
@@ -706,7 +676,9 @@ impl MyWindow {
             let self2 = self.clone();
             move |erase_bkgnd| -> w::AnyResult<i32> {
                 // Set the background color of the window in dark mode
-                if handle_lock_result!(self2.is_dark_mode.lock()) {
+                if handle_lock_result!(self2.is_dark_mode.lock())
+                    .map_or(false, |is_dark_mode| *is_dark_mode)
+                {
                     // Create a solid brush with the dark mode background color
                     match HBRUSH::CreateSolidBrush(COLORREF::new(0x1E, 0x1E, 0x1E)) {
                         Ok(hbrush) => {
