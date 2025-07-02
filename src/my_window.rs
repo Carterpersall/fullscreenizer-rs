@@ -693,9 +693,6 @@ impl MyWindow {
             let self2 = self.clone();
             let dpi = dpi.clone();
             move |size| -> w::AnyResult<()> {
-                // Get a handle to the window
-                let wnd = self2.wnd.hwnd();
-
                 // Get the current dpi of the window
                 let dpi = match dpi.read() {
                     Ok(dpi) => *dpi,
