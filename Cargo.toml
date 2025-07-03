@@ -2,10 +2,10 @@
 name = "fullscreenizer"
 version = "1.0.0"
 authors = ["Carter Persall <carterpersll@gmail.com>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies.winsafe]
-version = "0.0.23"
+version = "0.0.24"
 features = [
     "advapi",
     "gui",
@@ -16,7 +16,7 @@ features = [
 ]
 
 [dependencies.windows]
-version = "0.61.1"
+version = "0.61.3"
 features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm"

@@ -16,7 +16,7 @@ use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
 use winsafe::prelude::{
     advapi_Hkey, comctl_Himagelist, comctl_Hwnd, gdi_Hbrush, gdi_Hdc, gdi_Hfont, user_Hmonitor,
-    user_Hwnd, uxtheme_Hwnd, GuiNativeControl, GuiNativeControlEvents, GuiParent, GuiWindow,
+    user_Hwnd, uxtheme_Hwnd, GuiParent, GuiWindow,
     Handle,
 };
 use winsafe::{
@@ -59,7 +59,7 @@ impl MyWindow {
         let wnd = gui::WindowMain::new(gui::WindowMainOpts {
             title: "Fullscreenizer".to_owned(),
             class_icon: gui::Icon::Id(101),
-            size: (305, 400),
+            size: (381, 500),
             style: gui::WindowMainOpts::default().style
                 | co::WS::OVERLAPPEDWINDOW
                 | co::WS::SIZEBOX, // window can be resized
@@ -72,7 +72,7 @@ impl MyWindow {
                 text: "Toplevel windows:".to_string(),
                 position: (10, 9),
                 size: (200, 20),
-                label_style: co::SS::LEFTNOWORDWRAP,
+                control_style: co::SS::LEFTNOWORDWRAP,
                 window_style: co::WS::CHILD | co::WS::VISIBLE,
                 window_ex_style: co::WS_EX::NoValue,
                 ctrl_id: 10000,
@@ -87,14 +87,14 @@ impl MyWindow {
                 size: (289, 307),
                 // TODO: Surely the columns don't have to be initialized like this?
                 columns: vec![("".to_owned(), 999)],
-                list_view_style: co::LVS::NOSORTHEADER
+                control_style: co::LVS::NOSORTHEADER
                     | co::LVS::SHOWSELALWAYS
                     | co::LVS::NOCOLUMNHEADER
                     | co::LVS::NOLABELWRAP
                     | co::LVS::SINGLESEL
                     | co::LVS::REPORT
                     | co::LVS::SHAREIMAGELISTS,
-                list_view_ex_style: co::LVS_EX::DOUBLEBUFFER | co::LVS_EX::AUTOSIZECOLUMNS,
+                control_ex_style: co::LVS_EX::DOUBLEBUFFER | co::LVS_EX::AUTOSIZECOLUMNS,
                 window_style: co::WS::CHILD
                     | co::WS::VISIBLE
                     | co::WS::TABSTOP
@@ -113,7 +113,7 @@ impl MyWindow {
                 position: (2, 342),
                 size: (300, 20),
                 columns: vec![("".to_owned(), 999)],
-                list_view_style: co::LVS::NOSORTHEADER
+                control_style: co::LVS::NOSORTHEADER
                     | co::LVS::SHOWSELALWAYS
                     | co::LVS::NOCOLUMNHEADER
                     | co::LVS::NOLABELWRAP
@@ -121,7 +121,7 @@ impl MyWindow {
                     | co::LVS::REPORT
                     | co::LVS::NOSCROLL
                     | co::LVS::SHAREIMAGELISTS,
-                list_view_ex_style: co::LVS_EX::DOUBLEBUFFER
+                control_ex_style: co::LVS_EX::DOUBLEBUFFER
                     | co::LVS_EX::BORDERSELECT
                     | co::LVS_EX::AUTOSIZECOLUMNS
                     | co::LVS_EX::CHECKBOXES,
@@ -359,7 +359,7 @@ impl MyWindow {
         let mut use_icons = true; // TODO: Make this a setting
 
         // Create an image list to store the icons
-        let image_list = HIMAGELIST::Create(SIZE::new(16, 16), co::ILC::COLOR32, 0, 100)
+        let mut image_list = HIMAGELIST::Create(SIZE::new(16, 16), co::ILC::COLOR32, 0, 100)
             .unwrap_or_else(|e| {
                 // If creating the image list failed, disable the use of icons
                 use_icons = false;
@@ -432,9 +432,14 @@ impl MyWindow {
         .ok();
 
         // Set the image list for the listview
-        let _ = self
-            .process_list
-            .set_image_list(co::LVSIL::SMALL, image_list);
+        let hil = image_list.leak();
+        let _ = unsafe {
+            self.process_list.hwnd()
+                .SendMessage(w::msg::lvm::SetImageList {
+                    himagelist: Some(hil),
+                    kind: co::LVSIL::SMALL,
+                })
+        };
     }
 
     fn events(&self) {
@@ -674,7 +679,7 @@ impl MyWindow {
                 // Call the default window procedure
                 unsafe { self2.wnd.hwnd().DefWindowProc(dpi_changed) };
 
-                Ok(gui::WmRet::HandledOk)
+                Ok(0)
             }
         });
 
@@ -1109,7 +1114,7 @@ impl MyWindow {
 
                 Ok(())
             }
-        })
+        });
     }
 }
 
