@@ -15,8 +15,7 @@ use winsafe::guard::ImageListDestroyGuard;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
 use winsafe::prelude::{
-    advapi_Hkey, comctl_Himagelist, comctl_Hwnd, gdi_Hbrush, gdi_Hdc, gdi_Hfont, user_Hmonitor,
-    user_Hwnd, uxtheme_Hwnd, GuiParent, GuiWindow,
+    GuiParent, GuiWindow,
     Handle,
 };
 use winsafe::{
@@ -236,7 +235,7 @@ impl MyWindow {
         // Set the background color of the listview
         unsafe {
             process_list.SendMessage(SetBkColor {
-                color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
+                color: Option::from(COLORREF::from_rgb(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
             })
         }
         .map_err(|e| eprintln!("SetBkColor failed: {}", e))
@@ -245,7 +244,7 @@ impl MyWindow {
         // Set the background color of the elements in the listview
         unsafe {
             process_list.SendMessage(SetTextBkColor {
-                color: Option::from(COLORREF::new(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
+                color: Option::from(COLORREF::from_rgb(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
             })
         }
         .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
@@ -254,7 +253,7 @@ impl MyWindow {
         // Set the text color of the elements in the listview
         unsafe {
             process_list.SendMessage(SetTextColor {
-                color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
             })
         }
         .map_err(|e| eprintln!("SetTextColor failed: {}", e))
@@ -266,7 +265,7 @@ impl MyWindow {
         // Set the background color of the checkbox listview to the same as the window background
         unsafe {
             top_toggle.SendMessage(SetBkColor {
-                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)),
+                color: Option::from(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)),
             })
         }
         .map_err(|e| eprintln!("SetBkColor failed: {}", e))
@@ -275,7 +274,7 @@ impl MyWindow {
         // Set the background color of the element in the checkbox listview
         unsafe {
             top_toggle.SendMessage(SetTextBkColor {
-                color: Option::from(COLORREF::new(0x1E, 0x1E, 0x1E)),
+                color: Option::from(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)),
             })
         }
         .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
@@ -284,7 +283,7 @@ impl MyWindow {
         // Set the text color of the elements in the checkbox listview
         unsafe {
             top_toggle.SendMessage(SetTextColor {
-                color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
             })
         }
         .map_err(|e| eprintln!("SetTextColor failed: {}", e))
@@ -325,7 +324,7 @@ impl MyWindow {
                 // Set the background color of the checkbox listview to the same as the window background
                 unsafe {
                     self.top_toggle.hwnd().SendMessage(SetBkColor {
-                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                        color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
                     })
                 }
                 .map_err(|e| eprintln!("SetBkColor failed: {}", e))
@@ -334,7 +333,7 @@ impl MyWindow {
                 // Set the background color of the element in the checkbox listview
                 unsafe {
                     self.top_toggle.hwnd().SendMessage(SetTextBkColor {
-                        color: Option::from(COLORREF::new(0xF0, 0xF0, 0xF0)),
+                        color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
                     })
                 }
                 .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
@@ -359,7 +358,7 @@ impl MyWindow {
         let mut use_icons = true; // TODO: Make this a setting
 
         // Create an image list to store the icons
-        let mut image_list = HIMAGELIST::Create(SIZE::new(16, 16), co::ILC::COLOR32, 0, 100)
+        let mut image_list = HIMAGELIST::Create(SIZE::with(16, 16), co::ILC::COLOR32, 0, 100)
             .unwrap_or_else(|e| {
                 // If creating the image list failed, disable the use of icons
                 use_icons = false;
@@ -721,8 +720,8 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::new((10 * dpi / 120) as i32, (((29 - 20) * dpi / 120) / 2) as i32),
-                        SIZE::new((new_size.right - new_size.left) - (20 * dpi / 120) as i32, (20 * dpi / 120) as i32),
+                        POINT::with((10 * dpi / 120) as i32, (((29 - 20) * dpi / 120) / 2) as i32),
+                        SIZE::with((new_size.right - new_size.left) - (20 * dpi / 120) as i32, (20 * dpi / 120) as i32),
                         SWP::NOZORDER,
                     )
                     .map_err(|e| eprintln!("Failed to move label - SetWindowPos Failed: {}", e))
@@ -734,8 +733,8 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::new((8 * dpi / 120) as i32, (29 * dpi / 120) as i32),
-                        SIZE::new((new_size.right - new_size.left) - (16 * dpi / 120) as i32, (new_size.bottom - new_size.top) - ((29 + 25 + 33 + 20) * dpi / 120) as i32),
+                        POINT::with((8 * dpi / 120) as i32, (29 * dpi / 120) as i32),
+                        SIZE::with((new_size.right - new_size.left) - (16 * dpi / 120) as i32, (new_size.bottom - new_size.top) - ((29 + 25 + 33 + 20) * dpi / 120) as i32),
                         SWP::NOZORDER,
                     )
                     .map_err(|e| eprintln!("Failed to resize process list - SetWindowPos Failed: {}", e))
@@ -748,8 +747,8 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::new((2 * dpi / 120) as i32, (29 * dpi / 120) as i32 + ((new_size.bottom - new_size.top) - ((29 + 20 + 20 + 33) * dpi / 120) as i32)),
-                        SIZE::new((new_size.right - new_size.left) - (4 * dpi / 120) as i32, (25 * dpi / 120) as i32),
+                        POINT::with((2 * dpi / 120) as i32, (29 * dpi / 120) as i32 + ((new_size.bottom - new_size.top) - ((29 + 20 + 20 + 33) * dpi / 120) as i32)),
+                        SIZE::with((new_size.right - new_size.left) - (4 * dpi / 120) as i32, (25 * dpi / 120) as i32),
                         SWP::NOZORDER,
                     )
                     .map_err(|e| eprintln!("Failed to resize checkbox listview - SetWindowPos Failed: {}", e))
@@ -757,9 +756,9 @@ impl MyWindow {
 
                 // Determine the new size of the buttons
                 let btn_size: SIZE = if new_size.right - new_size.left >= (381 * dpi / 120) as i32 {
-                    SIZE::new((110 * dpi / 120) as i32, (33 * dpi / 120) as i32)
+                    SIZE::with((110 * dpi / 120) as i32, (33 * dpi / 120) as i32)
                 } else {
-                    SIZE::new(((new_size.right - new_size.left) / 3) - 16, (33 * dpi / 120) as i32)
+                    SIZE::with(((new_size.right - new_size.left) / 3) - 16, (33 * dpi / 120) as i32)
                 };
 
                 // Resize and center align the help button
@@ -769,7 +768,7 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::new(
+                        POINT::with(
                             ((new_size.right - new_size.left) / 2) - (btn_size.cx / 2),
                             new_size.bottom - (40 * dpi / 120) as i32,
                         ),
@@ -787,7 +786,7 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::new((13 * dpi / 120) as i32, new_size.bottom - (40 * dpi / 120) as i32),
+                        POINT::with((13 * dpi / 120) as i32, new_size.bottom - (40 * dpi / 120) as i32),
                         btn_size,
                         SWP::NOZORDER,
                     )
@@ -800,7 +799,7 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::new(new_size.right - btn_size.cx - (13 * dpi / 120) as i32, new_size.bottom - (40 * dpi / 120) as i32),
+                        POINT::with(new_size.right - btn_size.cx - (13 * dpi / 120) as i32, new_size.bottom - (40 * dpi / 120) as i32),
                         btn_size,
                         SWP::NOZORDER,
                     )
@@ -822,7 +821,7 @@ impl MyWindow {
             let self2 = self.clone();
             move |ctl| {
                 // Light mode background color and dark mode text color
-                let mut color = COLORREF::new(0xF0, 0xF0, 0xF0);
+                let mut color = COLORREF::from_rgb(0xF0, 0xF0, 0xF0);
 
                 if let Some(is_dark_mode) = handle_lock_result!(self2.is_dark_mode.lock()) {
                     if *is_dark_mode {
@@ -833,7 +832,7 @@ impl MyWindow {
                             .map_err(|e| eprintln!("SetTextColor on the label failed: {}", e));
 
                         // Set the color to the dark mode background color
-                        color = COLORREF::new(0x1E, 0x1E, 0x1E);
+                        color = COLORREF::from_rgb(0x1E, 0x1E, 0x1E);
                     }
                 }
 
@@ -872,7 +871,7 @@ impl MyWindow {
                     .map_or(false, |is_dark_mode| *is_dark_mode)
                 {
                     // Create a solid brush with the dark mode background color
-                    match HBRUSH::CreateSolidBrush(COLORREF::new(0x1E, 0x1E, 0x1E)) {
+                    match HBRUSH::CreateSolidBrush(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)) {
                         Ok(hbrush) => {
                             match self2.wnd.hwnd().GetClientRect() {
                                 Ok(rect) => {
@@ -924,7 +923,7 @@ impl MyWindow {
                     .refresh_btn
                     .hwnd()
                     .SetLayeredWindowAttributes(
-                        COLORREF::new(0xF0, 0xF0, 0xF0),
+                        COLORREF::from_rgb(0xF0, 0xF0, 0xF0),
                         255,
                         co::LWA::COLORKEY,
                     )
@@ -970,7 +969,7 @@ impl MyWindow {
                     .help_btn
                     .hwnd()
                     .SetLayeredWindowAttributes(
-                        COLORREF::new(0xF0, 0xF0, 0xF0),
+                        COLORREF::from_rgb(0xF0, 0xF0, 0xF0),
                         255,
                         co::LWA::COLORKEY,
                     )
@@ -1001,7 +1000,7 @@ impl MyWindow {
                     .fullscreenize_btn
                     .hwnd()
                     .SetLayeredWindowAttributes(
-                        COLORREF::new(0xF0, 0xF0, 0xF0),
+                        COLORREF::from_rgb(0xF0, 0xF0, 0xF0),
                         255,
                         co::LWA::COLORKEY,
                     )
@@ -1105,8 +1104,8 @@ impl MyWindow {
                 // Set the window position
                 window
                     .MoveWindow(
-                        POINT::new(rect.left, rect.top),
-                        SIZE::new(rect.right - rect.left, rect.bottom - rect.top),
+                        POINT::with(rect.left, rect.top),
+                        SIZE::with(rect.right - rect.left, rect.bottom - rect.top),
                         true,
                     )
                     .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - MoveWindow failed with error: {}", e)))
