@@ -12,6 +12,7 @@ use windows::core::BOOL;
 
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
+use winsafe::gui::dpi;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
 use winsafe::prelude::{GuiParent, GuiWindow, Handle};
@@ -55,7 +56,7 @@ impl MyWindow {
         let wnd = gui::WindowMain::new(gui::WindowMainOpts {
             title: "Fullscreenizer".to_owned(),
             class_icon: gui::Icon::Id(101),
-            size: (381, 500),
+            size: dpi(305, 400),
             style: gui::WindowMainOpts::default().style
                 | co::WS::OVERLAPPEDWINDOW
                 | co::WS::SIZEBOX, // window can be resized
@@ -716,16 +717,25 @@ impl MyWindow {
             }
         });
 
-        // TODO: Account for different resolutions
-        /*self.wnd.on().wm_get_min_max_info({
+        self.wnd.on().wm_get_min_max_info({
+            let dpi = dpi.clone();
             move |min_max| {
+                // Get the current dpi of the window
+                let dpi = match dpi.read() {
+                    Ok(dpi) => *dpi,
+                    Err(e) => {
+                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
+                        120
+                    }
+                };
+
                 // Set the minimum size of the window
-                min_max.info.ptMinTrackSize.x = 305;
-                min_max.info.ptMinTrackSize.y = 200;
+                min_max.info.ptMinTrackSize.x = (305 * dpi / 120) as i32;
+                min_max.info.ptMinTrackSize.y = (200 * dpi / 120) as i32;
 
                 Ok(())
             }
-        });*/
+        });
 
         self.wnd.on().wm_size({
             let self2 = self.clone();
