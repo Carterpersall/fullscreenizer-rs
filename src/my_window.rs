@@ -205,31 +205,31 @@ impl MyWindow {
                 size_of::<BOOL>() as u32,
             )
         }
-        .map_err(|e| eprintln!("DwmSetWindowAttribute failed: {}", e))
+        .map_err(|e| eprintln!("DwmSetWindowAttribute failed: {e}"))
         .ok();
 
         // Enable dark mode on the elements in the window
         wnd.SetWindowTheme("DarkMode_Explorer", None)
-            .map_err(|e| eprintln!("SetWindowTheme on window failed: {}", e))
+            .map_err(|e| eprintln!("SetWindowTheme on window failed: {e}"))
             .ok();
         process_list
             .SetWindowTheme("DarkMode_Explorer", None)
-            .map_err(|e| eprintln!("SetWindowTheme on process list failed: {}", e))
+            .map_err(|e| eprintln!("SetWindowTheme on process list failed: {e}"))
             .ok();
         self.refresh_btn
             .hwnd()
             .SetWindowTheme("DarkMode_Explorer", None)
-            .map_err(|e| eprintln!("SetWindowTheme on refresh button failed: {}", e))
+            .map_err(|e| eprintln!("SetWindowTheme on refresh button failed: {e}"))
             .ok();
         self.help_btn
             .hwnd()
             .SetWindowTheme("DarkMode_Explorer", None)
-            .map_err(|e| eprintln!("SetWindowTheme on help button failed: {}", e))
+            .map_err(|e| eprintln!("SetWindowTheme on help button failed: {e}"))
             .ok();
         self.fullscreenize_btn
             .hwnd()
             .SetWindowTheme("DarkMode_Explorer", None)
-            .map_err(|e| eprintln!("SetWindowTheme on fullscreenize button failed: {}", e))
+            .map_err(|e| eprintln!("SetWindowTheme on fullscreenize button failed: {e}"))
             .ok();
 
         // Set the background color of the listview
@@ -238,7 +238,7 @@ impl MyWindow {
                 color: Option::from(COLORREF::from_rgb(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
             })
         }
-        .map_err(|e| eprintln!("SetBkColor failed: {}", e))
+        .map_err(|e| eprintln!("SetBkColor failed: {e}"))
         .ok();
 
         // Set the background color of the elements in the listview
@@ -247,7 +247,7 @@ impl MyWindow {
                 color: Option::from(COLORREF::from_rgb(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
             })
         }
-        .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
+        .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
         .ok();
 
         // Set the text color of the elements in the listview
@@ -256,7 +256,7 @@ impl MyWindow {
                 color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
             })
         }
-        .map_err(|e| eprintln!("SetTextColor failed: {}", e))
+        .map_err(|e| eprintln!("SetTextColor failed: {e}"))
         .ok();
 
         // Get the handle of the top toggle
@@ -268,7 +268,7 @@ impl MyWindow {
                 color: Option::from(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)),
             })
         }
-        .map_err(|e| eprintln!("SetBkColor failed: {}", e))
+        .map_err(|e| eprintln!("SetBkColor failed: {e}"))
         .ok();
 
         // Set the background color of the element in the checkbox listview
@@ -277,7 +277,7 @@ impl MyWindow {
                 color: Option::from(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)),
             })
         }
-        .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
+        .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
         .ok();
 
         // Set the text color of the elements in the checkbox listview
@@ -286,7 +286,7 @@ impl MyWindow {
                 color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
             })
         }
-        .map_err(|e| eprintln!("SetTextColor failed: {}", e))
+        .map_err(|e| eprintln!("SetTextColor failed: {e}"))
         .ok();
     }
 
@@ -302,7 +302,7 @@ impl MyWindow {
                 .and_then(|key| key.RegQueryValueEx(Some("AppsUseLightTheme")))
                 .map_or_else(
                     |e| {
-                        eprintln!("Getting the system theme failed: {}", e);
+                        eprintln!("Getting the system theme failed: {e}");
                         // Default to light mode
                         false
                     },
@@ -327,7 +327,7 @@ impl MyWindow {
                         color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
                     })
                 }
-                .map_err(|e| eprintln!("SetBkColor failed: {}", e))
+                .map_err(|e| eprintln!("SetBkColor failed: {e}"))
                 .ok();
 
                 // Set the background color of the element in the checkbox listview
@@ -336,22 +336,22 @@ impl MyWindow {
                         color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
                     })
                 }
-                .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {}", e))
+                .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
                 .ok();
 
                 // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
                 self.process_list
                     .hwnd()
                     .SetWindowTheme("Explorer", None)
-                    .map_err(|e| eprintln!("SetWindowTheme failed: {}", e))
+                    .map_err(|e| eprintln!("SetWindowTheme failed: {e}"))
                     .ok();
             }
         }
     }
 
-    fn refresh_process_list(&self, windows: &mut MutexGuard<Vec<w::HWND>>) {
+    fn refresh_process_list(&self, windows: &mut MutexGuard<Vec<w::HWND>>) -> w::AnyResult<()> {
         // Clear the process list and window vector
-        self.process_list.items().delete_all();
+        self.process_list.items().delete_all()?;
         windows.clear();
 
         // Whether to use icons
@@ -362,7 +362,7 @@ impl MyWindow {
             .unwrap_or_else(|e| {
                 // If creating the image list failed, disable the use of icons
                 use_icons = false;
-                eprintln!("Imagelist Creation failed {}", e);
+                eprintln!("Imagelist Creation failed {e}");
                 unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
             });
 
@@ -411,7 +411,7 @@ impl MyWindow {
 
                 // Add the icon to the image list
                 Option::from(image_list.AddIcon(&icon).unwrap_or_else(|e| {
-                    eprintln!("AddIcon failed {}\n", e);
+                    eprintln!("AddIcon failed {e}\n");
                     u32::MAX
                 }))
             } else {
@@ -422,12 +422,14 @@ impl MyWindow {
             windows.push(hwnd);
 
             // Add the window to the list
-            self.process_list.items().add(&[title], icon_id, ());
+            self.process_list.items().add(&[title], icon_id, ()).map_err(|e| {
+                eprintln!("Failed to add item to process list - Add failed: {e}");
+            }).ok();
 
             // Return true to continue enumerating
             true
         })
-        .map_err(|e| eprintln!("EnumWindows failed: {}", e))
+        .map_err(|e| eprintln!("EnumWindows failed: {e}"))
         .ok();
 
         // Set the image list for the listview
@@ -439,6 +441,8 @@ impl MyWindow {
                     kind: co::LVSIL::SMALL,
                 })
         };
+
+        Ok(())
     }
 
     fn events(&self) {
@@ -465,18 +469,18 @@ impl MyWindow {
                         &["Apply \"stay on top\" flag to avoid taskbar flickering"],
                         None,
                         (),
-                    );
+                    )?;
 
                     // Paint the buttons to ensure they are visible initially
                     // Without this, the buttons are not visible until they are updated by hovering over them
                     self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {}", e)
+                        eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}")
                     }).ok();
                     self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {}", e)
+                        eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}")
                     }).ok();
                     self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {}", e)
+                        eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
                     }).ok();
                 }
 
@@ -494,13 +498,13 @@ impl MyWindow {
                 // Store the current DPI
                 dpi.write().map(|mut dpi| {
                     *dpi = self2.wnd.hwnd().GetDpiForWindow();
-                }).map_err(|e| eprintln!("Failed to set window DPI - Failed to write to RwLock: {}", e)).ok();
+                }).map_err(|e| eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")).ok();
 
                 // Get the current dpi of the window
                 let dpi = match dpi.read() {
                     Ok(dpi) => *dpi,
                     Err(e) => {
-                        eprintln!("Failed to read DPI - Failed to read from RwLock: {}", e);
+                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
                         120
                     }
                 };
@@ -529,7 +533,7 @@ impl MyWindow {
                             })
                         };
                     }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {}", e),
+                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
                 }
 
                  // Change the font in the buttons
@@ -570,7 +574,7 @@ impl MyWindow {
                             })
                         };
                     }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {}", e),
+                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
                 }
 
                 // Set the theme of the window
@@ -596,13 +600,13 @@ impl MyWindow {
                 dpi.write().map(|mut dpi| {
                     // LOWORD and HIWORD of the wParam both contain the new DPI
                     *dpi = (dpi_changed.wparam & 0xFFFF) as u32;
-                }).map_err(|e| eprintln!("Failed to set window DPI - Failed to write to RwLock: {}", e)).ok();
+                }).map_err(|e| eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")).ok();
 
                 // Get the new dpi of the window
                 let dpi = match dpi.read() {
                     Ok(dpi) => *dpi,
                     Err(e) => {
-                        eprintln!("Failed to read DPI - Failed to read from RwLock: {}", e);
+                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
                         120
                     }
                 };
@@ -631,7 +635,7 @@ impl MyWindow {
                             })
                         };
                     }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {}", e),
+                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
                 }
 
                 // Change the font in the buttons
@@ -672,7 +676,7 @@ impl MyWindow {
                             })
                         };
                     }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {}", e),
+                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
                 }
 
                 // Call the default window procedure
@@ -701,7 +705,7 @@ impl MyWindow {
                 let dpi = match dpi.read() {
                     Ok(dpi) => *dpi,
                     Err(e) => {
-                        eprintln!("Failed to read DPI - Failed to read from RwLock: {}", e);
+                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
                         120
                     }
                 };
@@ -724,7 +728,7 @@ impl MyWindow {
                         SIZE::with((new_size.right - new_size.left) - (20 * dpi / 120) as i32, (20 * dpi / 120) as i32),
                         SWP::NOZORDER,
                     )
-                    .map_err(|e| eprintln!("Failed to move label - SetWindowPos Failed: {}", e))
+                    .map_err(|e| eprintln!("Failed to move label - SetWindowPos Failed: {e}"))
                     .ok();
 
                 // Move the process list to be below the label
@@ -737,7 +741,7 @@ impl MyWindow {
                         SIZE::with((new_size.right - new_size.left) - (16 * dpi / 120) as i32, (new_size.bottom - new_size.top) - ((29 + 25 + 33 + 20) * dpi / 120) as i32),
                         SWP::NOZORDER,
                     )
-                    .map_err(|e| eprintln!("Failed to resize process list - SetWindowPos Failed: {}", e))
+                    .map_err(|e| eprintln!("Failed to resize process list - SetWindowPos Failed: {e}"))
                     .ok();
 
                 // Resize and move the checkbox listview
@@ -751,7 +755,7 @@ impl MyWindow {
                         SIZE::with((new_size.right - new_size.left) - (4 * dpi / 120) as i32, (25 * dpi / 120) as i32),
                         SWP::NOZORDER,
                     )
-                    .map_err(|e| eprintln!("Failed to resize checkbox listview - SetWindowPos Failed: {}", e))
+                    .map_err(|e| eprintln!("Failed to resize checkbox listview - SetWindowPos Failed: {e}"))
                     .ok();
 
                 // Determine the new size of the buttons
@@ -776,7 +780,7 @@ impl MyWindow {
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
-                        eprintln!("Failed to move help button - SetWindowPos Failed: {}", e)
+                        eprintln!("Failed to move help button - SetWindowPos Failed: {e}")
                     })
                     .ok();
 
@@ -791,7 +795,7 @@ impl MyWindow {
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
-                        eprintln!("Failed to move refresh button - SetWindowPos Failed: {}", e)
+                        eprintln!("Failed to move refresh button - SetWindowPos Failed: {e}")
                     })
                     .ok();
                 self2
@@ -804,10 +808,7 @@ impl MyWindow {
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
-                        eprintln!(
-                            "Failed to move fullscreenize button - SetWindowPos Failed: {}",
-                            e
-                        )
+                        eprintln!("Failed to move fullscreenize button - SetWindowPos Failed: {e}")
                     })
                     .ok();
 
@@ -829,7 +830,7 @@ impl MyWindow {
                         let _old_color = ctl
                             .hdc
                             .SetTextColor(color)
-                            .map_err(|e| eprintln!("SetTextColor on the label failed: {}", e));
+                            .map_err(|e| eprintln!("SetTextColor on the label failed: {e}"));
 
                         // Set the color to the dark mode background color
                         color = COLORREF::from_rgb(0x1E, 0x1E, 0x1E);
@@ -840,14 +841,14 @@ impl MyWindow {
                 let _old_bk_color = ctl
                     .hdc
                     .SetBkColor(color)
-                    .map_err(|e| eprintln!("SetBkColor on the label failed: {}", e));
+                    .map_err(|e| eprintln!("SetBkColor on the label failed: {e}"));
 
                 // If the brush in the Arc Mutex is NULL, create a new solid brush
                 if let Some(mut label_hbrush) = handle_lock_result!(label_hbrush.lock()) {
                     if *label_hbrush == HBRUSH::NULL {
                         HBRUSH::CreateSolidBrush(color).map_or_else(
                             |e| {
-                                eprintln!("CreateSolidBrush failed: {}", e);
+                                eprintln!("CreateSolidBrush failed: {e}");
                             },
                             |mut hbrush| {
                                 // Set the brush in the Arc Mutex
@@ -879,18 +880,18 @@ impl MyWindow {
                                     erase_bkgnd
                                         .hdc
                                         .FillRect(rect, &hbrush)
-                                        .map_err(|e| eprintln!("FillRect failed: {}", e))
+                                        .map_err(|e| eprintln!("FillRect failed: {e}"))
                                         .ok();
 
                                     return Ok(1);
                                 }
                                 Err(e) => {
-                                    eprintln!("GetClientRect failed: {}", e);
+                                    eprintln!("GetClientRect failed: {e}");
                                 }
                             }
                         }
                         Err(e) => {
-                            eprintln!("CreateSolidBrush failed: {}", e);
+                            eprintln!("CreateSolidBrush failed: {e}");
                         }
                     }
                 }
@@ -906,7 +907,9 @@ impl MyWindow {
             let self2 = self.clone();
             move |_| {
                 // Disable highlighting the item by clicking on it (Selecting with the arrow keys still works)
-                self2.top_toggle.items().get(0).select(false);
+                self2.top_toggle.items().get(0).select(false).map_err(|e| {
+                    eprintln!("Failed to deselect the top toggle item: {e}")
+                }).ok();
 
                 Ok(())
             }
@@ -928,7 +931,7 @@ impl MyWindow {
                         co::LWA::COLORKEY,
                     )
                     .map_err(|e| {
-                        eprintln!("SetLayeredWindowAttributes on refresh button failed: {}", e)
+                        eprintln!("SetLayeredWindowAttributes on refresh button failed: {e}")
                     })
                     .ok();
 
@@ -946,12 +949,12 @@ impl MyWindow {
                 match windows.lock() {
                     Ok(mut windows) => {
                         // Refresh the process list
-                        self2.refresh_process_list(&mut windows);
+                        self2.refresh_process_list(&mut windows)?;
                     }
                     Err(e) => {
                         // Show a popup window with the error message
                         show_error_message(
-                            format!("Failed to refresh process list - Mutex lock failed: {}", e)
+                            format!("Failed to refresh process list - Mutex lock failed: {e}")
                                 .as_str(),
                         );
                     }
@@ -974,7 +977,7 @@ impl MyWindow {
                         co::LWA::COLORKEY,
                     )
                     .map_err(|e| {
-                        eprintln!("SetLayeredWindowAttributes on help button failed: {}", e)
+                        eprintln!("SetLayeredWindowAttributes on help button failed: {e}")
                     })
                     .ok();
 
@@ -1005,10 +1008,7 @@ impl MyWindow {
                         co::LWA::COLORKEY,
                     )
                     .map_err(|e| {
-                        eprintln!(
-                            "SetLayeredWindowAttributes on fullscreenize button failed: {}",
-                            e,
-                        )
+                        eprintln!("SetLayeredWindowAttributes on fullscreenize button failed: {e}")
                     })
                     .ok();
 
@@ -1037,7 +1037,7 @@ impl MyWindow {
                 let window = match windows.lock() {
                     Ok(windows) => windows,
                     Err(e) => {
-                        show_error_message(format!("Failed to fullscreenize window - Mutex lock failed: {}", e).as_str());
+                        show_error_message(format!("Failed to fullscreenize window - Mutex lock failed: {e}").as_str());
                         return Ok(());
                     }
                 };
@@ -1055,7 +1055,7 @@ impl MyWindow {
                 let Ok(monitor_info) = window
                     .MonitorFromWindow(co::MONITOR::DEFAULTTONEAREST)
                     .GetMonitorInfo()
-                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - GetMonitorInfo failed with error: {}", e)))
+                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - GetMonitorInfo failed with error: {e}")))
                     else {
                         return Ok(());
                     };
@@ -1076,7 +1076,7 @@ impl MyWindow {
                 match AdjustWindowRectEx(rect, window.style(), false, window.style_ex()) {
                     Ok(rct) => rect = rct, // TODO: Test this
                     Err(e) => {
-                        show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectEx failed with error: {}", e));
+                        show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectEx failed with error: {e}"));
                         return Ok(());
                     }
                 }
@@ -1108,7 +1108,7 @@ impl MyWindow {
                         SIZE::with(rect.right - rect.left, rect.bottom - rect.top),
                         true,
                     )
-                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - MoveWindow failed with error: {}", e)))
+                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - MoveWindow failed with error: {e}")))
                     .ok();
 
                 Ok(())
@@ -1132,7 +1132,7 @@ fn show_error_message(message: &str) {
             co::TDCBF::OK,
             w::IconRes::Error,
         )
-        .map_err(|e| eprintln!("TaskDialog failed: {}", e))
+        .map_err(|e| eprintln!("TaskDialog failed: {e}"))
         .ok();
 }
 
@@ -1155,6 +1155,6 @@ fn show_help_message() {
             co::TDCBF::OK,
             w::IconRes::None,
         )
-        .map_err(|e| eprintln!("TaskDialog failed: {}", e))
+        .map_err(|e| eprintln!("TaskDialog failed: {e}"))
         .ok();
 }
