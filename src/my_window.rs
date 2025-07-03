@@ -6,21 +6,18 @@ use core::mem::size_of;
 use std::ops::Shr;
 use std::sync::{Mutex, MutexGuard, RwLock};
 
-use windows::core::BOOL;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
+use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
+use windows::core::BOOL;
 
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
-use winsafe::prelude::{
-    GuiParent, GuiWindow,
-    Handle,
-};
+use winsafe::prelude::{GuiParent, GuiWindow, Handle};
 use winsafe::{
-    self as w, co, gui, AdjustWindowRectEx, EnumWindows, GetLastError, HwndPlace, COLORREF, HBRUSH,
-    HICON, HIMAGELIST, POINT, RECT, SIZE,
+    self as w, AdjustWindowRectEx, COLORREF, EnumWindows, GetLastError, HBRUSH, HICON, HIMAGELIST,
+    HwndPlace, POINT, RECT, SIZE, co, gui,
 };
 
 /// Macro to handle the result of a mutex lock
@@ -422,9 +419,13 @@ impl MyWindow {
             windows.push(hwnd);
 
             // Add the window to the list
-            self.process_list.items().add(&[title], icon_id, ()).map_err(|e| {
-                eprintln!("Failed to add item to process list - Add failed: {e}");
-            }).ok();
+            self.process_list
+                .items()
+                .add(&[title], icon_id, ())
+                .map_err(|e| {
+                    eprintln!("Failed to add item to process list - Add failed: {e}");
+                })
+                .ok();
 
             // Return true to continue enumerating
             true
@@ -435,7 +436,8 @@ impl MyWindow {
         // Set the image list for the listview
         let hil = image_list.leak();
         let _ = unsafe {
-            self.process_list.hwnd()
+            self.process_list
+                .hwnd()
                 .SendMessage(w::msg::lvm::SetImageList {
                     himagelist: Some(hil),
                     kind: co::LVSIL::SMALL,
@@ -496,9 +498,14 @@ impl MyWindow {
             let dpi = dpi.clone();
             move |create| -> w::AnyResult<i32> {
                 // Store the current DPI
-                dpi.write().map(|mut dpi| {
-                    *dpi = self2.wnd.hwnd().GetDpiForWindow();
-                }).map_err(|e| eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")).ok();
+                dpi.write()
+                    .map(|mut dpi| {
+                        *dpi = self2.wnd.hwnd().GetDpiForWindow();
+                    })
+                    .map_err(|e| {
+                        eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")
+                    })
+                    .ok();
 
                 // Get the current dpi of the window
                 let dpi = match dpi.read() {
@@ -511,109 +518,10 @@ impl MyWindow {
 
                 // Change the font of the label
                 match w::HFONT::CreateFont(
-                    SIZE { cx: 0, cy: -((15 * dpi / 120) as i32) },
-                    0,
-                    0,
-                    co::FW::MEDIUM,
-                    false,
-                    false,
-                    false,
-                    co::CHARSET::DEFAULT,
-                    co::OUT_PRECIS::DEFAULT,
-                    co::CLIP::DEFAULT_PRECIS,
-                    co::QUALITY::DRAFT,
-                    co::PITCH::DEFAULT,
-                    "Segoe UI",
-                ) {
-                    Ok(mut hfont) => {
-                        unsafe {
-                            self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: hfont.leak(),
-                                redraw: true,
-                            })
-                        };
-                    }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
-                }
-
-                 // Change the font in the buttons
-                match w::HFONT::CreateFont(
-                    SIZE { cx: 0, cy: -((15 * dpi / 120) as i32) },
-                    0,
-                    0,
-                    co::FW::MEDIUM,
-                    false,
-                    false,
-                    false,
-                    co::CHARSET::DEFAULT,
-                    co::OUT_PRECIS::DEFAULT,
-                    co::CLIP::DEFAULT_PRECIS,
-                    co::QUALITY::DRAFT,
-                    co::PITCH::DEFAULT,
-                    "Segoe UI",
-                ) {
-                    Ok(mut hfont) => {
-                        // TODO: Make this more global to ensure that it doesn't leak
-                        let font = hfont.leak();
-                        unsafe {
-                            self2.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                        unsafe {
-                            self2.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                        unsafe {
-                            self2.fullscreenize_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                    }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
-                }
-
-                // Set the theme of the window
-                self2.set_system_theme();
-
-                // Refresh the process list
-                self2.refresh_btn.trigger_click();
-
-                // Call the default window procedure
-                unsafe { self2.wnd.hwnd().DefWindowProc(create) };
-
-                Ok(0)
-            }
-        });
-
-        // Handle DPI changes
-        self.wnd.on().wm(co::WM::DPICHANGED, {
-            let self2 = self.clone();
-            let dpi = dpi.clone();
-            move |dpi_changed: w::msg::WndMsg| {
-                println!("DPI changed to {}", dpi_changed.wparam & 0xFFFF);
-                // Store the new DPI of the window
-                dpi.write().map(|mut dpi| {
-                    // LOWORD and HIWORD of the wParam both contain the new DPI
-                    *dpi = (dpi_changed.wparam & 0xFFFF) as u32;
-                }).map_err(|e| eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")).ok();
-
-                // Get the new dpi of the window
-                let dpi = match dpi.read() {
-                    Ok(dpi) => *dpi,
-                    Err(e) => {
-                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
-                        120
-                    }
-                };
-
-                // Change the font of the label
-                match w::HFONT::CreateFont(
-                    SIZE { cx: 0, cy: -((15 * dpi / 120) as i32) },
+                    SIZE {
+                        cx: 0,
+                        cy: -((15 * dpi / 120) as i32),
+                    },
                     0,
                     0,
                     co::FW::MEDIUM,
@@ -640,7 +548,10 @@ impl MyWindow {
 
                 // Change the font in the buttons
                 match w::HFONT::CreateFont(
-                    SIZE { cx: 0, cy: -((15 * dpi / 120) as i32) },
+                    SIZE {
+                        cx: 0,
+                        cy: -((15 * dpi / 120) as i32),
+                    },
                     0,
                     0,
                     co::FW::MEDIUM,
@@ -670,10 +581,129 @@ impl MyWindow {
                             })
                         };
                         unsafe {
-                            self2.fullscreenize_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                            self2
+                                .fullscreenize_btn
+                                .hwnd()
+                                .SendMessage(w::msg::wm::SetFont {
+                                    hfont: font.raw_copy(),
+                                    redraw: true,
+                                })
+                        };
+                    }
+                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
+                }
+
+                // Set the theme of the window
+                self2.set_system_theme();
+
+                // Refresh the process list
+                self2.refresh_btn.trigger_click();
+
+                // Call the default window procedure
+                unsafe { self2.wnd.hwnd().DefWindowProc(create) };
+
+                Ok(0)
+            }
+        });
+
+        // Handle DPI changes
+        self.wnd.on().wm(co::WM::DPICHANGED, {
+            let self2 = self.clone();
+            let dpi = dpi.clone();
+            move |dpi_changed: w::msg::WndMsg| {
+                println!("DPI changed to {}", dpi_changed.wparam & 0xFFFF);
+                // Store the new DPI of the window
+                dpi.write()
+                    .map(|mut dpi| {
+                        // LOWORD and HIWORD of the wParam both contain the new DPI
+                        *dpi = (dpi_changed.wparam & 0xFFFF) as u32;
+                    })
+                    .map_err(|e| {
+                        eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")
+                    })
+                    .ok();
+
+                // Get the new dpi of the window
+                let dpi = match dpi.read() {
+                    Ok(dpi) => *dpi,
+                    Err(e) => {
+                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
+                        120
+                    }
+                };
+
+                // Change the font of the label
+                match w::HFONT::CreateFont(
+                    SIZE {
+                        cx: 0,
+                        cy: -((15 * dpi / 120) as i32),
+                    },
+                    0,
+                    0,
+                    co::FW::MEDIUM,
+                    false,
+                    false,
+                    false,
+                    co::CHARSET::DEFAULT,
+                    co::OUT_PRECIS::DEFAULT,
+                    co::CLIP::DEFAULT_PRECIS,
+                    co::QUALITY::DRAFT,
+                    co::PITCH::DEFAULT,
+                    "Segoe UI",
+                ) {
+                    Ok(mut hfont) => {
+                        unsafe {
+                            self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
+                                hfont: hfont.leak(),
+                                redraw: true,
+                            })
+                        };
+                    }
+                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
+                }
+
+                // Change the font in the buttons
+                match w::HFONT::CreateFont(
+                    SIZE {
+                        cx: 0,
+                        cy: -((15 * dpi / 120) as i32),
+                    },
+                    0,
+                    0,
+                    co::FW::MEDIUM,
+                    false,
+                    false,
+                    false,
+                    co::CHARSET::DEFAULT,
+                    co::OUT_PRECIS::DEFAULT,
+                    co::CLIP::DEFAULT_PRECIS,
+                    co::QUALITY::DRAFT,
+                    co::PITCH::DEFAULT,
+                    "Segoe UI",
+                ) {
+                    Ok(mut hfont) => {
+                        // TODO: Make this more global to ensure that it doesn't leak
+                        let font = hfont.leak();
+                        unsafe {
+                            self2.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
                                 hfont: font.raw_copy(),
                                 redraw: true,
                             })
+                        };
+                        unsafe {
+                            self2.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                                hfont: font.raw_copy(),
+                                redraw: true,
+                            })
+                        };
+                        unsafe {
+                            self2
+                                .fullscreenize_btn
+                                .hwnd()
+                                .SendMessage(w::msg::wm::SetFont {
+                                    hfont: font.raw_copy(),
+                                    redraw: true,
+                                })
                         };
                     }
                     Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
@@ -724,8 +754,14 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with((10 * dpi / 120) as i32, (((29 - 20) * dpi / 120) / 2) as i32),
-                        SIZE::with((new_size.right - new_size.left) - (20 * dpi / 120) as i32, (20 * dpi / 120) as i32),
+                        POINT::with(
+                            (10 * dpi / 120) as i32,
+                            (((29 - 20) * dpi / 120) / 2) as i32,
+                        ),
+                        SIZE::with(
+                            (new_size.right - new_size.left) - (20 * dpi / 120) as i32,
+                            (20 * dpi / 120) as i32,
+                        ),
                         SWP::NOZORDER,
                     )
                     .map_err(|e| eprintln!("Failed to move label - SetWindowPos Failed: {e}"))
@@ -738,10 +774,16 @@ impl MyWindow {
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with((8 * dpi / 120) as i32, (29 * dpi / 120) as i32),
-                        SIZE::with((new_size.right - new_size.left) - (16 * dpi / 120) as i32, (new_size.bottom - new_size.top) - ((29 + 25 + 33 + 20) * dpi / 120) as i32),
+                        SIZE::with(
+                            (new_size.right - new_size.left) - (16 * dpi / 120) as i32,
+                            (new_size.bottom - new_size.top)
+                                - ((29 + 25 + 33 + 20) * dpi / 120) as i32,
+                        ),
                         SWP::NOZORDER,
                     )
-                    .map_err(|e| eprintln!("Failed to resize process list - SetWindowPos Failed: {e}"))
+                    .map_err(|e| {
+                        eprintln!("Failed to resize process list - SetWindowPos Failed: {e}")
+                    })
                     .ok();
 
                 // Resize and move the checkbox listview
@@ -751,18 +793,31 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with((2 * dpi / 120) as i32, (29 * dpi / 120) as i32 + ((new_size.bottom - new_size.top) - ((29 + 20 + 20 + 33) * dpi / 120) as i32)),
-                        SIZE::with((new_size.right - new_size.left) - (4 * dpi / 120) as i32, (25 * dpi / 120) as i32),
+                        POINT::with(
+                            (2 * dpi / 120) as i32,
+                            (29 * dpi / 120) as i32
+                                + ((new_size.bottom - new_size.top)
+                                    - ((29 + 20 + 20 + 33) * dpi / 120) as i32),
+                        ),
+                        SIZE::with(
+                            (new_size.right - new_size.left) - (4 * dpi / 120) as i32,
+                            (25 * dpi / 120) as i32,
+                        ),
                         SWP::NOZORDER,
                     )
-                    .map_err(|e| eprintln!("Failed to resize checkbox listview - SetWindowPos Failed: {e}"))
+                    .map_err(|e| {
+                        eprintln!("Failed to resize checkbox listview - SetWindowPos Failed: {e}")
+                    })
                     .ok();
 
                 // Determine the new size of the buttons
                 let btn_size: SIZE = if new_size.right - new_size.left >= (381 * dpi / 120) as i32 {
                     SIZE::with((110 * dpi / 120) as i32, (33 * dpi / 120) as i32)
                 } else {
-                    SIZE::with(((new_size.right - new_size.left) / 3) - 16, (33 * dpi / 120) as i32)
+                    SIZE::with(
+                        ((new_size.right - new_size.left) / 3) - 16,
+                        (33 * dpi / 120) as i32,
+                    )
                 };
 
                 // Resize and center align the help button
@@ -779,9 +834,7 @@ impl MyWindow {
                         btn_size,
                         SWP::NOZORDER,
                     )
-                    .map_err(|e| {
-                        eprintln!("Failed to move help button - SetWindowPos Failed: {e}")
-                    })
+                    .map_err(|e| eprintln!("Failed to move help button - SetWindowPos Failed: {e}"))
                     .ok();
 
                 // Resize and align the other buttons
@@ -790,7 +843,10 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with((13 * dpi / 120) as i32, new_size.bottom - (40 * dpi / 120) as i32),
+                        POINT::with(
+                            (13 * dpi / 120) as i32,
+                            new_size.bottom - (40 * dpi / 120) as i32,
+                        ),
                         btn_size,
                         SWP::NOZORDER,
                     )
@@ -803,7 +859,10 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with(new_size.right - btn_size.cx - (13 * dpi / 120) as i32, new_size.bottom - (40 * dpi / 120) as i32),
+                        POINT::with(
+                            new_size.right - btn_size.cx - (13 * dpi / 120) as i32,
+                            new_size.bottom - (40 * dpi / 120) as i32,
+                        ),
                         btn_size,
                         SWP::NOZORDER,
                     )
@@ -907,9 +966,13 @@ impl MyWindow {
             let self2 = self.clone();
             move |_| {
                 // Disable highlighting the item by clicking on it (Selecting with the arrow keys still works)
-                self2.top_toggle.items().get(0).select(false).map_err(|e| {
-                    eprintln!("Failed to deselect the top toggle item: {e}")
-                }).ok();
+                self2
+                    .top_toggle
+                    .items()
+                    .get(0)
+                    .select(false)
+                    .map_err(|e| eprintln!("Failed to deselect the top toggle item: {e}"))
+                    .ok();
 
                 Ok(())
             }
@@ -976,9 +1039,7 @@ impl MyWindow {
                         255,
                         co::LWA::COLORKEY,
                     )
-                    .map_err(|e| {
-                        eprintln!("SetLayeredWindowAttributes on help button failed: {e}")
-                    })
+                    .map_err(|e| eprintln!("SetLayeredWindowAttributes on help button failed: {e}"))
                     .ok();
 
                 unsafe { self2.help_btn.hwnd().DefSubclassProc(Paint {}) };
