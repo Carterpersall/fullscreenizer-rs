@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 use core::ffi::c_void;
 use core::mem::size_of;
 use std::ops::Shr;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
 use windows::Win32::Foundation::HWND;
@@ -67,8 +68,8 @@ impl MyWindow {
             &wnd,
             gui::LabelOpts {
                 text: "Toplevel windows:".to_string(),
-                position: (10, 9),
-                size: (200, 20),
+                position: dpi(10, 9),
+                size: dpi(200, 20),
                 control_style: co::SS::LEFTNOWORDWRAP,
                 window_style: co::WS::CHILD | co::WS::VISIBLE,
                 window_ex_style: co::WS_EX::NoValue,
@@ -80,9 +81,8 @@ impl MyWindow {
         let process_list = gui::ListView::new(
             &wnd,
             gui::ListViewOpts {
-                position: (8, 29),
-                size: (289, 307),
-                // TODO: Surely the columns don't have to be initialized like this?
+                position: dpi(8, 29),
+                size: dpi(289, 307),
                 columns: vec![("".to_owned(), 999)],
                 control_style: co::LVS::NOSORTHEADER
                     | co::LVS::SHOWSELALWAYS
@@ -107,8 +107,8 @@ impl MyWindow {
         let top_toggle = gui::ListView::new(
             &wnd,
             gui::ListViewOpts {
-                position: (2, 342),
-                size: (300, 20),
+                position: dpi(2, 342),
+                size: dpi(300, 20),
                 columns: vec![("".to_owned(), 999)],
                 control_style: co::LVS::NOSORTHEADER
                     | co::LVS::SHOWSELALWAYS
@@ -137,7 +137,7 @@ impl MyWindow {
             &wnd,
             gui::ButtonOpts {
                 text: "&Refresh".to_owned(),
-                position: (13, 368),
+                position: dpi(13, 368),
                 window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
@@ -147,7 +147,7 @@ impl MyWindow {
             &wnd,
             gui::ButtonOpts {
                 text: "&Help".to_owned(),
-                position: (108, 368),
+                position: dpi(108, 368),
                 window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
@@ -157,7 +157,7 @@ impl MyWindow {
             &wnd,
             gui::ButtonOpts {
                 text: "&Fullscreenize".to_owned(),
-                position: (202, 368),
+                position: dpi(202, 368),
                 window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
@@ -796,6 +796,17 @@ impl MyWindow {
                     })
                     .ok();
 
+                // Resize the process list column
+                self2
+                    .process_list
+                    .cols()
+                    .get(0)
+                    .set_width((new_size.right - new_size.left) - (16 * dpi / 120) as i32)
+                    .map_err(|e| {
+                        eprintln!("Failed to resize process list column - SetWidth Failed: {e}")
+                    })
+                    .ok();
+
                 // Resize and move the checkbox listview
                 // TODO: Fix the end of the checkbox turning white when changing DPI
                 self2
@@ -983,6 +994,51 @@ impl MyWindow {
                     .select(false)
                     .map_err(|e| eprintln!("Failed to deselect the top toggle item: {e}"))
                     .ok();
+
+                Ok(())
+            }
+        });
+
+        // Indicates if the first process list paint event has occurred
+        let process_list_paint_count: Arc<AtomicU8> = Arc::new(AtomicU8::new(0));
+
+        self.process_list.on_subclass().wm_paint({
+            let self2 = self.clone();
+            move || {
+                // Call the default window procedure to paint the process list normally
+                unsafe { self2.process_list.hwnd().DefSubclassProc(Paint {}) };
+
+                // The listview shows a vertical line when column width < listview width, and a
+                // horizontal scrollbar when column width > listview width. LVS_EX::AUTOSIZECOLUMNS
+                // removes the scrollbar but creates a timing problem: auto-sizing happens after
+                // WM_SIZE on the initial paint, so the vertical line persists until the next resize.
+                // Solution: trigger WM_SIZE after the second paint event to override the auto-sizing.
+                // Checking on every paint event is suboptimal but safer than using self-modifying code.
+                let paint_count = process_list_paint_count.load(Ordering::Relaxed);
+
+                if paint_count == 1 {
+                    // Increment the first paint counter
+                    process_list_paint_count.store(2, Ordering::Relaxed);
+
+                    // Trigger a resize event
+                    match self2.wnd.hwnd().GetClientRect() {
+                        Ok(rect) => unsafe {
+                            self2.wnd.hwnd().SendMessage(w::msg::wm::Size {
+                                request: co::SIZE_R::RESTORED,
+                                client_area: SIZE::with(
+                                    rect.right - rect.left,
+                                    rect.bottom - rect.top,
+                                ),
+                            });
+                        },
+                        Err(e) => {
+                            eprintln!("Failed to get client rect - GetClientRect Failed: {e}");
+                        }
+                    };
+                } else if paint_count == 0 {
+                    // Increment the first paint counter
+                    process_list_paint_count.store(1, Ordering::Relaxed);
+                }
 
                 Ok(())
             }
