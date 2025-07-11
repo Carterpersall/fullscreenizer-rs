@@ -5,9 +5,12 @@ authors = ["Carter Persall <carterpersll@gmail.com>"]
 edition = "2024"
 
 [dependencies.winsafe]
-version = "0.0.25"
+#version = "0.0.25"
+git = "https://github.com/rodrigocfd/winsafe.git"
+rev = "8ce45b3"
 features = [
     "advapi",
+    "dwm",
     "gui",
     "comctl",
     "user",
@@ -15,19 +18,7 @@ features = [
     "kernel"
 ]
 
-[dependencies.windows]
-version = "0.61.3"
-features = [
-    "Win32_Foundation",
-    "Win32_Graphics_Dwm"
-]
-
 [profile.release]
 lto = "fat"
 codegen-units = 1
-opt-level = 3
 strip = "symbols"
-
-[profile.dev]
-opt-level = 0
-strip = "none"

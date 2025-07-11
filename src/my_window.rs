@@ -1,15 +1,9 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use core::ffi::c_void;
-use core::mem::size_of;
 use std::ops::Shr;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
-
-use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
-use windows::core::BOOL;
 
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
@@ -18,8 +12,8 @@ use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::msg::wm::Paint;
 use winsafe::prelude::{GuiParent, GuiWindow, Handle};
 use winsafe::{
-    self as w, AdjustWindowRectEx, COLORREF, EnumWindows, GetLastError, HBRUSH, HICON, HIMAGELIST,
-    HwndPlace, POINT, RECT, SIZE, co, gui,
+    self as w, AdjustWindowRectEx, COLORREF, DwmAttr, EnumWindows, GetLastError, HBRUSH, HICON,
+    HIMAGELIST, HwndPlace, POINT, RECT, SIZE, co, gui,
 };
 
 /// Macro to handle the result of a mutex lock
@@ -191,20 +185,10 @@ impl MyWindow {
         // Get a handle to the process list
         let process_list = self.process_list.hwnd();
 
-        // Get an unsafe handle to the window
-        let hwnd = HWND(wnd.ptr());
-
         // Enable dark mode on the window
-        unsafe {
-            DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_USE_IMMERSIVE_DARK_MODE,
-                &1 as *const _ as *const c_void,
-                size_of::<BOOL>() as u32,
-            )
-        }
-        .map_err(|e| eprintln!("DwmSetWindowAttribute failed: {e}"))
-        .ok();
+        wnd.DwmSetWindowAttribute(DwmAttr::UseImmersiveDarkMode(true))
+            .map_err(|e| eprintln!("DwmSetWindowAttribute failed: {e}"))
+            .ok();
 
         // Enable dark mode on the elements in the window
         wnd.SetWindowTheme("DarkMode_Explorer", None)
