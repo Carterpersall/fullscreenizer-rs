@@ -44,8 +44,13 @@ pub struct MyWindow {
     refresh_btn: gui::Button,
     help_btn: gui::Button,
     fullscreenize_btn: gui::Button,
+
     // Settings
     is_dark_mode: Arc<Mutex<bool>>,
+
+    // Shared resources
+    app_font: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
+    app_dpi: Arc<RwLock<u32>>,
 }
 
 impl MyWindow {
@@ -160,6 +165,10 @@ impl MyWindow {
         );
 
         let is_dark_mode = Arc::new(Mutex::new(false));
+        let app_font = Arc::new(Mutex::new(None));
+        // The current DPI of the window
+        // This is used to scale the window elements based on a 1440p (120 DPI) display
+        let app_dpi = Arc::new(RwLock::new(120));
 
         let new_self = Self {
             wnd,
@@ -170,6 +179,8 @@ impl MyWindow {
             help_btn,
             fullscreenize_btn,
             is_dark_mode,
+            app_font,
+            app_dpi,
         };
 
         new_self.events();
@@ -178,6 +189,75 @@ impl MyWindow {
 
     pub fn run(&self) -> w::AnyResult<i32> {
         self.wnd.run_main(None)
+    }
+
+    fn update_font(&self) {
+        // Get the current DPI
+        let app_dpi = match self.app_dpi.read() {
+            Ok(app_dpi) => *app_dpi,
+            Err(e) => {
+                eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
+                120
+            }
+        };
+
+        // Create a new font based on the current DPI
+        let font = match w::HFONT::CreateFont(
+            SIZE {
+                cx: 0,
+                cy: -((15 * app_dpi / 120) as i32),
+            },
+            0,
+            0,
+            co::FW::MEDIUM,
+            false,
+            false,
+            false,
+            co::CHARSET::DEFAULT,
+            co::OUT_PRECIS::DEFAULT,
+            co::CLIP::DEFAULT_PRECIS,
+            co::QUALITY::DRAFT,
+            co::PITCH::DEFAULT,
+            "Segoe UI",
+        ) {
+            Ok(hfont) => hfont,
+            Err(e) => {
+                eprintln!("Failed to create font - CreateFont failed: {e}");
+                return;
+            }
+        };
+
+        // Store the font in the shared resource
+        if let Ok(mut app_font) = self.app_font.lock() {
+            *app_font = Some(font);
+        }
+
+        // Update the font for all controls
+        match self.app_font.lock() {
+            Ok(app_font) => {
+                if let Some(font) = app_font.as_ref() {
+                    unsafe {
+                        self.label.hwnd().SendMessage(w::msg::wm::SetFont {
+                            hfont: font.raw_copy(),
+                            redraw: true,
+                        });
+                        self.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                            hfont: font.raw_copy(),
+                            redraw: true,
+                        });
+                        self.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                            hfont: font.raw_copy(),
+                            redraw: true,
+                        });
+                        self.fullscreenize_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                            hfont: font.raw_copy(),
+                            redraw: true,
+                        });
+                    }
+                }
+            }
+            Err(e) => eprintln!("Failed to lock app_font mutex: {e}"),
+        }
     }
 
     fn enable_dark_mode(&self) {
@@ -438,10 +518,6 @@ impl MyWindow {
         // Indicates if the first paint event has occurred
         let first_paint = Arc::new(Mutex::new(true));
 
-        // The current DPI of the window
-        // This is used to scale the window elements based on a 1440p (120 DPI) display
-        let dpi = Arc::new(RwLock::new(120));
-
         // Some actions can't be performed in the window creation event, so they are done in the first paint event
         self.wnd.on().wm_paint({
             let self2 = self.clone();
@@ -482,79 +558,19 @@ impl MyWindow {
 
         self.wnd.on().wm_create({
             let self2 = self.clone();
-            let dpi = dpi.clone();
             move |create| -> w::AnyResult<i32> {
                 // Store the current DPI
-                dpi.write()
-                    .map(|mut dpi| {
-                        *dpi = self2.wnd.hwnd().GetDpiForWindow();
+                self2.app_dpi.write()
+                    .map(|mut app_dpi| {
+                        *app_dpi = self2.wnd.hwnd().GetDpiForWindow();
                     })
                     .map_err(|e| {
                         eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")
                     })
                     .ok();
 
-                // Get the current dpi of the window
-                let dpi = match dpi.read() {
-                    Ok(dpi) => *dpi,
-                    Err(e) => {
-                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
-                        120
-                    }
-                };
-
                 // Change the font in the buttons and label
-                match w::HFONT::CreateFont(
-                    SIZE {
-                        cx: 0,
-                        cy: -((15 * dpi / 120) as i32),
-                    },
-                    0,
-                    0,
-                    co::FW::MEDIUM,
-                    false,
-                    false,
-                    false,
-                    co::CHARSET::DEFAULT,
-                    co::OUT_PRECIS::DEFAULT,
-                    co::CLIP::DEFAULT_PRECIS,
-                    co::QUALITY::DRAFT,
-                    co::PITCH::DEFAULT,
-                    "Segoe UI",
-                ) {
-                    Ok(mut hfont) => {
-                        // TODO: Make this more global to ensure that it doesn't leak
-                        let font = hfont.leak();
-                        unsafe {
-                            self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                        unsafe {
-                            self2.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                        unsafe {
-                            self2.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                        unsafe {
-                            self2
-                                .fullscreenize_btn
-                                .hwnd()
-                                .SendMessage(w::msg::wm::SetFont {
-                                    hfont: font.raw_copy(),
-                                    redraw: true,
-                                })
-                        };
-                    }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
-                }
+                self2.update_font();
 
                 // Set the theme of the window
                 self2.set_system_theme();
@@ -572,81 +588,21 @@ impl MyWindow {
         // Handle DPI changes
         self.wnd.on().wm(co::WM::DPICHANGED, {
             let self2 = self.clone();
-            let dpi = dpi.clone();
             move |dpi_changed: w::msg::WndMsg| {
                 println!("DPI changed to {}", dpi_changed.wparam & 0xFFFF);
                 // Store the new DPI of the window
-                dpi.write()
-                    .map(|mut dpi| {
+                self2.app_dpi.write()
+                    .map(|mut app_dpi| {
                         // LOWORD and HIWORD of the wParam both contain the new DPI
-                        *dpi = (dpi_changed.wparam & 0xFFFF) as u32;
+                        *app_dpi = (dpi_changed.wparam & 0xFFFF) as u32;
                     })
                     .map_err(|e| {
                         eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")
                     })
                     .ok();
 
-                // Get the new dpi of the window
-                let dpi = match dpi.read() {
-                    Ok(dpi) => *dpi,
-                    Err(e) => {
-                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
-                        120
-                    }
-                };
-
                 // Change the font of the label
-                match w::HFONT::CreateFont(
-                    SIZE {
-                        cx: 0,
-                        cy: -((15 * dpi / 120) as i32),
-                    },
-                    0,
-                    0,
-                    co::FW::MEDIUM,
-                    false,
-                    false,
-                    false,
-                    co::CHARSET::DEFAULT,
-                    co::OUT_PRECIS::DEFAULT,
-                    co::CLIP::DEFAULT_PRECIS,
-                    co::QUALITY::DRAFT,
-                    co::PITCH::DEFAULT,
-                    "Segoe UI",
-                ) {
-                    Ok(mut hfont) => {
-                        // TODO: Make this more global to ensure that it doesn't leak
-                        let font = hfont.leak();
-                        unsafe {
-                            self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                        unsafe {
-                            self2.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                        unsafe {
-                            self2.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            })
-                        };
-                        unsafe {
-                            self2
-                                .fullscreenize_btn
-                                .hwnd()
-                                .SendMessage(w::msg::wm::SetFont {
-                                    hfont: font.raw_copy(),
-                                    redraw: true,
-                                })
-                        };
-                    }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
-                }
+                self2.update_font();
 
                 // Call the default window procedure
                 unsafe { self2.wnd.hwnd().DefWindowProc(dpi_changed) };
@@ -656,11 +612,11 @@ impl MyWindow {
         });
 
         self.wnd.on().wm_get_min_max_info({
-            let dpi = dpi.clone();
+            let self2 = self.clone();
             move |min_max| {
                 // Get the current dpi of the window
-                let dpi = match dpi.read() {
-                    Ok(dpi) => *dpi,
+                let app_dpi = match self2.app_dpi.read() {
+                    Ok(app_dpi) => *app_dpi,
                     Err(e) => {
                         eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
                         120
@@ -668,8 +624,8 @@ impl MyWindow {
                 };
 
                 // Set the minimum size of the window
-                min_max.info.ptMinTrackSize.x = (305 * dpi / 120) as i32;
-                min_max.info.ptMinTrackSize.y = (200 * dpi / 120) as i32;
+                min_max.info.ptMinTrackSize.x = (305 * app_dpi / 120) as i32;
+                min_max.info.ptMinTrackSize.y = (200 * app_dpi / 120) as i32;
 
                 Ok(())
             }
@@ -677,11 +633,10 @@ impl MyWindow {
 
         self.wnd.on().wm_size({
             let self2 = self.clone();
-            let dpi = dpi.clone();
             move |size| -> w::AnyResult<()> {
                 // Get the current dpi of the window
-                let dpi = match dpi.read() {
-                    Ok(dpi) => *dpi,
+                let app_dpi = match self2.app_dpi.read() {
+                    Ok(app_dpi) => *app_dpi,
                     Err(e) => {
                         eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
                         120
@@ -703,12 +658,12 @@ impl MyWindow {
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with(
-                            (10 * dpi / 120) as i32,
-                            (((29 - 20) * dpi / 120) / 2) as i32,
+                            (10 * app_dpi / 120) as i32,
+                            (((29 - 20) * app_dpi / 120) / 2) as i32,
                         ),
                         SIZE::with(
-                            (new_size.right - new_size.left) - (20 * dpi / 120) as i32,
-                            (20 * dpi / 120) as i32,
+                            (new_size.right - new_size.left) - (20 * app_dpi / 120) as i32,
+                            (20 * app_dpi / 120) as i32,
                         ),
                         SWP::NOZORDER,
                     )
@@ -721,11 +676,11 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with((8 * dpi / 120) as i32, (29 * dpi / 120) as i32),
+                        POINT::with((8 * app_dpi / 120) as i32, (29 * app_dpi / 120) as i32),
                         SIZE::with(
-                            (new_size.right - new_size.left) - (16 * dpi / 120) as i32,
+                            (new_size.right - new_size.left) - (16 * app_dpi / 120) as i32,
                             (new_size.bottom - new_size.top)
-                                - ((29 + 25 + 33 + 20) * dpi / 120) as i32,
+                                - ((29 + 25 + 33 + 20) * app_dpi / 120) as i32,
                         ),
                         SWP::NOZORDER,
                     )
@@ -739,7 +694,7 @@ impl MyWindow {
                     .process_list
                     .cols()
                     .get(0)
-                    .set_width((new_size.right - new_size.left) - (16 * dpi / 120) as i32)
+                    .set_width((new_size.right - new_size.left) - (16 * app_dpi / 120) as i32)
                     .map_err(|e| {
                         eprintln!("Failed to resize process list column - SetWidth Failed: {e}")
                     })
@@ -753,14 +708,14 @@ impl MyWindow {
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with(
-                            (2 * dpi / 120) as i32,
-                            (29 * dpi / 120) as i32
+                            (2 * app_dpi / 120) as i32,
+                            (29 * app_dpi / 120) as i32
                                 + ((new_size.bottom - new_size.top)
-                                    - ((29 + 20 + 20 + 33) * dpi / 120) as i32),
+                                    - ((29 + 20 + 20 + 33) * app_dpi / 120) as i32),
                         ),
                         SIZE::with(
-                            (new_size.right - new_size.left) - (4 * dpi / 120) as i32,
-                            (25 * dpi / 120) as i32,
+                            (new_size.right - new_size.left) - (4 * app_dpi / 120) as i32,
+                            (25 * app_dpi / 120) as i32,
                         ),
                         SWP::NOZORDER,
                     )
@@ -770,12 +725,12 @@ impl MyWindow {
                     .ok();
 
                 // Determine the new size of the buttons
-                let btn_size: SIZE = if new_size.right - new_size.left >= (381 * dpi / 120) as i32 {
-                    SIZE::with((110 * dpi / 120) as i32, (33 * dpi / 120) as i32)
+                let btn_size: SIZE = if new_size.right - new_size.left >= (381 * app_dpi / 120) as i32 {
+                    SIZE::with((110 * app_dpi / 120) as i32, (33 * app_dpi / 120) as i32)
                 } else {
                     SIZE::with(
                         ((new_size.right - new_size.left) / 3) - 16,
-                        (33 * dpi / 120) as i32,
+                        (33 * app_dpi / 120) as i32,
                     )
                 };
 
@@ -788,7 +743,7 @@ impl MyWindow {
                         HwndPlace::None,
                         POINT::with(
                             ((new_size.right - new_size.left) / 2) - (btn_size.cx / 2),
-                            new_size.bottom - (40 * dpi / 120) as i32,
+                            new_size.bottom - (40 * app_dpi / 120) as i32,
                         ),
                         btn_size,
                         SWP::NOZORDER,
@@ -803,8 +758,8 @@ impl MyWindow {
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with(
-                            (13 * dpi / 120) as i32,
-                            new_size.bottom - (40 * dpi / 120) as i32,
+                            (13 * app_dpi / 120) as i32,
+                            new_size.bottom - (40 * app_dpi / 120) as i32,
                         ),
                         btn_size,
                         SWP::NOZORDER,
@@ -819,8 +774,8 @@ impl MyWindow {
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with(
-                            new_size.right - btn_size.cx - (13 * dpi / 120) as i32,
-                            new_size.bottom - (40 * dpi / 120) as i32,
+                            new_size.right - btn_size.cx - (13 * app_dpi / 120) as i32,
+                            new_size.bottom - (40 * app_dpi / 120) as i32,
                         ),
                         btn_size,
                         SWP::NOZORDER,
