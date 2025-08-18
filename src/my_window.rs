@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use std::ops::Shr;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
 use winsafe::co::SWP;
@@ -47,6 +47,7 @@ pub struct MyWindow {
 
     // Settings
     is_dark_mode: Arc<Mutex<bool>>,
+    use_icons: Arc<AtomicBool>,
 
     // Shared resources
     app_font: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
@@ -164,7 +165,14 @@ impl MyWindow {
             },
         );
 
+        /* Settings */
+        // Whether dark mode is enabled
         let is_dark_mode = Arc::new(Mutex::new(false));
+        // Whether to use icons in the process list
+        let use_icons = Arc::new(AtomicBool::new(true));
+
+        /* Shared Resources */
+        // The application's font
         let app_font = Arc::new(Mutex::new(None));
         // The current DPI of the window
         // This is used to scale the window elements based on a 1440p (120 DPI) display
@@ -181,6 +189,7 @@ impl MyWindow {
             is_dark_mode,
             app_font,
             app_dpi,
+            use_icons,
         };
 
         new_self.events();
@@ -418,14 +427,11 @@ impl MyWindow {
         self.process_list.items().delete_all()?;
         windows.clear();
 
-        // Whether to use icons
-        let mut use_icons = true; // TODO: Make this a setting
-
         // Create an image list to store the icons
         let mut image_list = HIMAGELIST::Create(SIZE::with(16, 16), co::ILC::COLOR32, 0, 100)
             .unwrap_or_else(|e| {
                 // If creating the image list failed, disable the use of icons
-                use_icons = false;
+                self.use_icons.store(false, Ordering::SeqCst);
                 eprintln!("Imagelist Creation failed {e}");
                 unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
             });
@@ -445,7 +451,7 @@ impl MyWindow {
                 return true;
             }
 
-            let icon_id = if use_icons {
+            let icon_id = if self.use_icons.load(Ordering::SeqCst) {
                 // Get the window icon
                 let icon = match unsafe {
                     HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
