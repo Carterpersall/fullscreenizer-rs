@@ -36,6 +36,7 @@ macro_rules! handle_lock_result {
 
 #[derive(Clone)]
 pub struct MyWindow {
+    // Window elements
     wnd: gui::WindowMain,
     label: gui::Label,
     process_list: gui::ListView,
@@ -43,6 +44,7 @@ pub struct MyWindow {
     refresh_btn: gui::Button,
     help_btn: gui::Button,
     fullscreenize_btn: gui::Button,
+    // Settings
     is_dark_mode: Arc<Mutex<bool>>,
 }
 
@@ -501,37 +503,7 @@ impl MyWindow {
                     }
                 };
 
-                // Change the font of the label
-                match w::HFONT::CreateFont(
-                    SIZE {
-                        cx: 0,
-                        cy: -((15 * dpi / 120) as i32),
-                    },
-                    0,
-                    0,
-                    co::FW::MEDIUM,
-                    false,
-                    false,
-                    false,
-                    co::CHARSET::DEFAULT,
-                    co::OUT_PRECIS::DEFAULT,
-                    co::CLIP::DEFAULT_PRECIS,
-                    co::QUALITY::DRAFT,
-                    co::PITCH::DEFAULT,
-                    "Segoe UI",
-                ) {
-                    Ok(mut hfont) => {
-                        unsafe {
-                            self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: hfont.leak(),
-                                redraw: true,
-                            })
-                        };
-                    }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
-                }
-
-                // Change the font in the buttons
+                // Change the font in the buttons and label
                 match w::HFONT::CreateFont(
                     SIZE {
                         cx: 0,
@@ -553,6 +525,12 @@ impl MyWindow {
                     Ok(mut hfont) => {
                         // TODO: Make this more global to ensure that it doesn't leak
                         let font = hfont.leak();
+                        unsafe {
+                            self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
+                                hfont: font.raw_copy(),
+                                redraw: true,
+                            })
+                        };
                         unsafe {
                             self2.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
                                 hfont: font.raw_copy(),
@@ -637,38 +615,14 @@ impl MyWindow {
                     "Segoe UI",
                 ) {
                     Ok(mut hfont) => {
+                        // TODO: Make this more global to ensure that it doesn't leak
+                        let font = hfont.leak();
                         unsafe {
                             self2.label.hwnd().SendMessage(w::msg::wm::SetFont {
-                                hfont: hfont.leak(),
+                                hfont: font.raw_copy(),
                                 redraw: true,
                             })
                         };
-                    }
-                    Err(e) => eprintln!("Failed to create font - CreateFont failed: {e}"),
-                }
-
-                // Change the font in the buttons
-                match w::HFONT::CreateFont(
-                    SIZE {
-                        cx: 0,
-                        cy: -((15 * dpi / 120) as i32),
-                    },
-                    0,
-                    0,
-                    co::FW::MEDIUM,
-                    false,
-                    false,
-                    false,
-                    co::CHARSET::DEFAULT,
-                    co::OUT_PRECIS::DEFAULT,
-                    co::CLIP::DEFAULT_PRECIS,
-                    co::QUALITY::DRAFT,
-                    co::PITCH::DEFAULT,
-                    "Segoe UI",
-                ) {
-                    Ok(mut hfont) => {
-                        // TODO: Make this more global to ensure that it doesn't leak
-                        let font = hfont.leak();
                         unsafe {
                             self2.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
                                 hfont: font.raw_copy(),
