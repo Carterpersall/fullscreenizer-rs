@@ -1,0 +1,41 @@
+﻿/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// The main application icon.
+// 101 is the resource identifier (ID).
+// ICON is the resource type.
+// "Icon.ico" is the path to the icon file.
+101 ICON "Icon.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Manifest
+//
+
+// The application manifest file.
+// The manifest does the following:
+//  1. requestedExecutionLevel:
+//      - level = "asInvoker"
+//          - The application will run with the same privileges as the user who started it.
+//      - uiAccess = "false"
+//          - The application will not be able to access protected UI elements.
+//  2. supportedOS:
+//      - Id = "{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"
+//          - Windows 10 and later
+//  3. assemblyIdentity:
+//      - name = "Microsoft.Windows.Common-Controls"
+//          - The application will use the common controls library.
+//          - This is required for the application to use the common controls (like buttons, edit boxes, etc.)
+//  4. windowsSettings:
+//      - dpiAware = "true/pm"
+//          - The application will be DPI aware on a per-monitor basis.
+//          - Only applies before Windows 10 1607.
+//      - dpiAwareness = "permonitorV2,permonitor"
+//          - The application will be DPI aware on a per-monitor basis.
+//          - Windows 10 1607 and later.
+// 1 is the standard ID for an application manifest.
+// 24 is the resource type for a manifest (RT_MANIFEST).
+// "Manifest.manifest" is the path to the manifest file.
+1 24 "Manifest.manifest"
