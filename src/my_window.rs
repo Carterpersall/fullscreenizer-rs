@@ -729,14 +729,15 @@ impl MyWindow {
                     .ok();
 
                 // Determine the new size of the buttons
-                let btn_size: SIZE = if new_size.right - new_size.left >= (381 * app_dpi / 120) as i32 {
-                    SIZE::with((110 * app_dpi / 120) as i32, (33 * app_dpi / 120) as i32)
-                } else {
-                    SIZE::with(
-                        ((new_size.right - new_size.left) / 3) - 16,
-                        (33 * app_dpi / 120) as i32,
-                    )
-                };
+                let btn_size: SIZE =
+                    if new_size.right - new_size.left >= (381 * app_dpi / 120) as i32 {
+                        SIZE::with((110 * app_dpi / 120) as i32, (33 * app_dpi / 120) as i32)
+                    } else {
+                        SIZE::with(
+                            ((new_size.right - new_size.left) / 3) - 16,
+                            (33 * app_dpi / 120) as i32,
+                        )
+                    };
 
                 // Resize and center align the help button
                 // TODO: Fix the buttons wobbling when resizing vertically from the top border
