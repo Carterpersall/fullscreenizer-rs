@@ -527,47 +527,6 @@ impl MyWindow {
     }
 
     fn events(&self) {
-        // Indicates if the first paint event has occurred
-        let first_paint = Arc::new(Mutex::new(true));
-
-        // Some actions can't be performed in the window creation event, so they are done in the first paint event
-        self.wnd.on().wm_paint({
-            let self2 = self.clone();
-            move || -> w::AnyResult<()> {
-                // Get a handle to the window
-                let wnd = self2.wnd.hwnd();
-
-                // Check if this is the first paint event
-                if let Some(mut first_paint) = handle_lock_result!(first_paint.clone().lock()) {
-                    *first_paint = false;
-
-                    // Add text to the checkbox listview
-                    self2.top_toggle.items().add(
-                        &["Apply \"stay on top\" flag to avoid taskbar flickering"],
-                        None,
-                        (),
-                    )?;
-
-                    // Paint the buttons to ensure they are visible initially
-                    // Without this, the buttons are not visible until they are updated by hovering over them
-                    self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}")
-                    }).ok();
-                    self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}")
-                    }).ok();
-                    self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
-                    }).ok();
-                }
-
-                // Call the default window procedure
-                unsafe { wnd.DefWindowProc(Paint {}) };
-
-                Ok(())
-            }
-        });
-
         self.wnd.on().wm_create({
             let self2 = self.clone();
             move |create| -> w::AnyResult<i32> {
@@ -590,10 +549,43 @@ impl MyWindow {
                 // Refresh the process list
                 self2.refresh_btn.trigger_click();
 
+                // Start an one-shot timer for some post-creation tasks
+                self2.wnd.hwnd().SetTimer(1, 1, None).ok();
+
                 // Call the default window procedure
                 unsafe { self2.wnd.hwnd().DefWindowProc(create) };
 
                 Ok(0)
+            }
+        });
+
+        // Handle post-creation tasks
+        self.wnd.on().wm_timer(1, {
+            let self2 = self.clone();
+            move || {
+                // Stop the timer
+                self2.wnd.hwnd().KillTimer(1).ok();
+
+                // Add text to the checkbox listview
+                self2.top_toggle.items().add(
+                    &["Apply \"stay on top\" flag to avoid taskbar flickering"],
+                    None,
+                    (),
+                )?;
+
+                // Force the buttons to repaint
+                // Without this, the buttons are not visible until they are updated by hovering over them
+                self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                    eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}")
+                }).ok();
+                self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                    eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}")
+                }).ok();
+                self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                    eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
+                }).ok();
+
+                Ok(())
             }
         });
 
