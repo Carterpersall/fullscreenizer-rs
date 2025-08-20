@@ -91,8 +91,7 @@ impl MyWindow {
                     | co::LVS::NOCOLUMNHEADER
                     | co::LVS::NOLABELWRAP
                     | co::LVS::SINGLESEL
-                    | co::LVS::REPORT
-                    | co::LVS::SHAREIMAGELISTS,
+                    | co::LVS::REPORT,
                 control_ex_style: co::LVS_EX::DOUBLEBUFFER | co::LVS_EX::AUTOSIZECOLUMNS,
                 window_style: co::WS::CHILD
                     | co::WS::VISIBLE
@@ -508,7 +507,7 @@ impl MyWindow {
 
         // Set the image list for the listview
         let hil = image_list.leak();
-        let _ = unsafe {
+        let old_hil = unsafe {
             self.process_list
                 .hwnd()
                 .SendMessage(w::msg::lvm::SetImageList {
@@ -516,6 +515,13 @@ impl MyWindow {
                     kind: co::LVSIL::SMALL,
                 })
         };
+
+        // Drop the old imagelist
+        if let Some(old_hil) = old_hil {
+            unsafe {
+                let _ = ImageListDestroyGuard::new(old_hil);
+            }
+        }
 
         Ok(())
     }
