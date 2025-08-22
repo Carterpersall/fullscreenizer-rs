@@ -2,14 +2,13 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use std::ops::Shr;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::gui::dpi;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
-use winsafe::msg::wm::Paint;
 use winsafe::prelude::{GuiParent, GuiWindow, Handle};
 use winsafe::{
     self as w, AdjustWindowRectEx, COLORREF, DwmAttr, EnumWindows, GetLastError, HBRUSH, HICON,
@@ -41,6 +40,7 @@ pub struct MyWindow {
     label: gui::Label,
     process_list: gui::ListView,
     top_toggle: gui::ListView,
+    btn_canvas: gui::Label,
     refresh_btn: gui::Button,
     help_btn: gui::Button,
     fullscreenize_btn: gui::Button,
@@ -134,12 +134,25 @@ impl MyWindow {
             },
         );
 
+        // Label that will be the parent of the buttons
+        // This will allow for the buttons' undrawn background color to be configured
+        let btn_canvas = gui::Label::new(
+            &wnd,
+            gui::LabelOpts {
+                text: "".to_owned(),
+                position: dpi(8, 360),
+                size: dpi(290, 40),
+                window_style: co::WS::CHILD | co::WS::VISIBLE | co::WS::CLIPSIBLINGS,
+                window_ex_style: co::WS_EX::CONTROLPARENT,
+                ..Default::default()
+            },
+        );
+
         let refresh_btn = gui::Button::new(
             &wnd,
             gui::ButtonOpts {
                 text: "&Refresh".to_owned(),
                 position: dpi(13, 368),
-                window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
         );
@@ -149,7 +162,6 @@ impl MyWindow {
             gui::ButtonOpts {
                 text: "&Help".to_owned(),
                 position: dpi(108, 368),
-                window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
         );
@@ -159,7 +171,6 @@ impl MyWindow {
             gui::ButtonOpts {
                 text: "&Fullscreenize".to_owned(),
                 position: dpi(202, 368),
-                window_ex_style: co::WS_EX::LAYERED,
                 ..Default::default()
             },
         );
@@ -182,6 +193,7 @@ impl MyWindow {
             label,
             process_list,
             top_toggle,
+            btn_canvas,
             refresh_btn,
             help_btn,
             fullscreenize_btn,
@@ -573,6 +585,11 @@ impl MyWindow {
                     (),
                 )?;
 
+                // Set the canvas as the button's parent
+                self2.refresh_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
+                self2.help_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
+                self2.fullscreenize_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
+
                 // Force the buttons to repaint
                 // Without this, the buttons are not visible until they are updated by hovering over them
                 self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
@@ -585,7 +602,44 @@ impl MyWindow {
                     eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
                 }).ok();
 
+                // The listview shows a vertical line when column width < listview width, and a
+                // horizontal scrollbar when column width > listview width. LVS_EX::AUTOSIZECOLUMNS
+                // removes the scrollbar but creates a timing problem: auto-sizing happens after
+                // WM_SIZE on the initial paint, so the vertical line persists until the next resize.
+                // Solution: send WM_SIZE after the listview is created, triggering a column resize.
+                match self2.wnd.hwnd().GetClientRect() {
+                    Ok(rect) => unsafe {
+                        self2.wnd.hwnd().SendMessage(w::msg::wm::Size {
+                            request: co::SIZE_R::RESTORED,
+                            client_area: SIZE::with(
+                                rect.right - rect.left,
+                                rect.bottom - rect.top,
+                            ),
+                        });
+                    },
+                    Err(e) => {
+                        eprintln!("Failed to get client rect - GetClientRect Failed: {e}");
+                    }
+                };
+
                 Ok(())
+            }
+        });
+
+        // Receive the button click events and forward them to the main window
+        // This is necessary to ensure that the main window receives the button click events
+        self.btn_canvas.on_subclass().wm(w::co::WM::COMMAND, {
+            let self2 = self.clone();
+            move |a| {
+                // Forward the message to the main window
+                unsafe {
+                    self2.wnd.hwnd().SendMessage(w::msg::WndMsg::new(
+                        co::WM::COMMAND,
+                        a.wparam,
+                        a.lparam,
+                    ));
+                }
+                Ok(1)
             }
         });
 
@@ -705,7 +759,6 @@ impl MyWindow {
                     .ok();
 
                 // Resize and move the checkbox listview
-                // TODO: Fix the end of the checkbox turning white when changing DPI
                 self2
                     .top_toggle
                     .hwnd()
@@ -739,8 +792,22 @@ impl MyWindow {
                         )
                     };
 
-                // Resize and center align the help button
-                // TODO: Fix the buttons wobbling when resizing vertically from the top border
+                // Resize and move the button canvas
+                self2
+                    .btn_canvas
+                    .hwnd()
+                    .SetWindowPos(
+                        HwndPlace::None,
+                        POINT::with(0, new_size.bottom - (40 * app_dpi / 120) as i32),
+                        SIZE::with(new_size.right - new_size.left, (33 * app_dpi / 120) as i32),
+                        SWP::NOZORDER,
+                    )
+                    .map_err(|e| {
+                        eprintln!("Failed to resize button canvas - SetWindowPos Failed: {e}")
+                    })
+                    .ok();
+
+                // Resize and align the buttons
                 self2
                     .help_btn
                     .hwnd()
@@ -748,15 +815,13 @@ impl MyWindow {
                         HwndPlace::None,
                         POINT::with(
                             ((new_size.right - new_size.left) / 2) - (btn_size.cx / 2),
-                            new_size.bottom - (40 * app_dpi / 120) as i32,
+                            0,
                         ),
                         btn_size,
                         SWP::NOZORDER,
                     )
                     .map_err(|e| eprintln!("Failed to move help button - SetWindowPos Failed: {e}"))
                     .ok();
-
-                // Resize and align the other buttons
                 self2
                     .refresh_btn
                     .hwnd()
@@ -764,7 +829,7 @@ impl MyWindow {
                         HwndPlace::None,
                         POINT::with(
                             (13 * app_dpi / 120) as i32,
-                            new_size.bottom - (40 * app_dpi / 120) as i32,
+                            0,
                         ),
                         btn_size,
                         SWP::NOZORDER,
@@ -780,7 +845,7 @@ impl MyWindow {
                         HwndPlace::None,
                         POINT::with(
                             new_size.right - btn_size.cx - (13 * app_dpi / 120) as i32,
-                            new_size.bottom - (40 * app_dpi / 120) as i32,
+                            0,
                         ),
                         btn_size,
                         SWP::NOZORDER,
@@ -897,76 +962,8 @@ impl MyWindow {
             }
         });
 
-        // Indicates if the first process list paint event has occurred
-        let process_list_paint_count: Arc<AtomicU8> = Arc::new(AtomicU8::new(0));
-
-        self.process_list.on_subclass().wm_paint({
-            let self2 = self.clone();
-            move || {
-                // Call the default window procedure to paint the process list normally
-                unsafe { self2.process_list.hwnd().DefSubclassProc(Paint {}) };
-
-                // The listview shows a vertical line when column width < listview width, and a
-                // horizontal scrollbar when column width > listview width. LVS_EX::AUTOSIZECOLUMNS
-                // removes the scrollbar but creates a timing problem: auto-sizing happens after
-                // WM_SIZE on the initial paint, so the vertical line persists until the next resize.
-                // Solution: trigger WM_SIZE after the second paint event to override the auto-sizing.
-                // Checking on every paint event is suboptimal but safer than using self-modifying code.
-                let paint_count = process_list_paint_count.load(Ordering::Relaxed);
-
-                if paint_count == 1 {
-                    // Increment the first paint counter
-                    process_list_paint_count.store(2, Ordering::Relaxed);
-
-                    // Trigger a resize event
-                    match self2.wnd.hwnd().GetClientRect() {
-                        Ok(rect) => unsafe {
-                            self2.wnd.hwnd().SendMessage(w::msg::wm::Size {
-                                request: co::SIZE_R::RESTORED,
-                                client_area: SIZE::with(
-                                    rect.right - rect.left,
-                                    rect.bottom - rect.top,
-                                ),
-                            });
-                        },
-                        Err(e) => {
-                            eprintln!("Failed to get client rect - GetClientRect Failed: {e}");
-                        }
-                    };
-                } else if paint_count == 0 {
-                    // Increment the first paint counter
-                    process_list_paint_count.store(1, Ordering::Relaxed);
-                }
-
-                Ok(())
-            }
-        });
-
         // Create a vector in a mutex to store the open windows
         let windows: Arc<Mutex<Vec<w::HWND>>> = Arc::new(Mutex::new(Vec::new()));
-
-        self.refresh_btn.on_subclass().wm_paint({
-            let self2 = self.clone();
-            move || {
-                // Make the undrawn area of the button transparent
-                self2
-                    .refresh_btn
-                    .hwnd()
-                    .SetLayeredWindowAttributes(
-                        COLORREF::from_rgb(0xF0, 0xF0, 0xF0),
-                        255,
-                        co::LWA::COLORKEY,
-                    )
-                    .map_err(|e| {
-                        eprintln!("SetLayeredWindowAttributes on refresh button failed: {e}")
-                    })
-                    .ok();
-
-                unsafe { self2.refresh_btn.hwnd().DefSubclassProc(Paint {}) };
-
-                Ok(())
-            }
-        });
 
         self.refresh_btn.on().bn_clicked({
             let self2 = self.clone();
@@ -991,54 +988,10 @@ impl MyWindow {
             }
         });
 
-        self.help_btn.on_subclass().wm_paint({
-            let self2 = self.clone();
-            move || {
-                // Make the undrawn area of the button transparent
-                self2
-                    .help_btn
-                    .hwnd()
-                    .SetLayeredWindowAttributes(
-                        COLORREF::from_rgb(0xF0, 0xF0, 0xF0),
-                        255,
-                        co::LWA::COLORKEY,
-                    )
-                    .map_err(|e| eprintln!("SetLayeredWindowAttributes on help button failed: {e}"))
-                    .ok();
-
-                unsafe { self2.help_btn.hwnd().DefSubclassProc(Paint {}) };
-
-                Ok(())
-            }
-        });
-
         self.help_btn.on().bn_clicked({
             move || {
                 // TODO: Maybe replace with settings
                 show_help_message();
-                Ok(())
-            }
-        });
-
-        self.fullscreenize_btn.on_subclass().wm_paint({
-            let self2 = self.clone();
-            move || {
-                // Make the undrawn area of the button transparent
-                self2
-                    .fullscreenize_btn
-                    .hwnd()
-                    .SetLayeredWindowAttributes(
-                        COLORREF::from_rgb(0xF0, 0xF0, 0xF0),
-                        255,
-                        co::LWA::COLORKEY,
-                    )
-                    .map_err(|e| {
-                        eprintln!("SetLayeredWindowAttributes on fullscreenize button failed: {e}")
-                    })
-                    .ok();
-
-                unsafe { self2.fullscreenize_btn.hwnd().DefSubclassProc(Paint {}) };
-
                 Ok(())
             }
         });
@@ -1099,7 +1052,7 @@ impl MyWindow {
 
                 // Set the window size
                 match AdjustWindowRectEx(rect, window.style(), false, window.style_ex()) {
-                    Ok(rct) => rect = rct, // TODO: Test this
+                    Ok(rct) => rect = rct,
                     Err(e) => {
                         show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectEx failed with error: {e}"));
                         return Ok(());
