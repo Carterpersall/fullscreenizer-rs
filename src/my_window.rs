@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use std::ops::Shr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
 use winsafe::co::SWP;
@@ -51,7 +51,7 @@ pub struct MyWindow {
 
     // Shared resources
     app_font: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
-    app_dpi: Arc<RwLock<u32>>,
+    app_dpi: Arc<AtomicU32>,
 }
 
 impl MyWindow {
@@ -185,8 +185,8 @@ impl MyWindow {
         // The application's font
         let app_font = Arc::new(Mutex::new(None));
         // The current DPI of the window
-        // This is used to scale the window elements based on a 1440p (120 DPI) display
-        let app_dpi = Arc::new(RwLock::new(120));
+        // This is used to scale the window elements based on a 125% (120 DPI) display
+        let app_dpi = Arc::new(AtomicU32::new(120));
 
         let new_self = Self {
             wnd,
@@ -213,13 +213,7 @@ impl MyWindow {
 
     fn update_font(&self) {
         // Get the current DPI
-        let app_dpi = match self.app_dpi.read() {
-            Ok(app_dpi) => *app_dpi,
-            Err(e) => {
-                eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
-                120
-            }
-        };
+        let app_dpi = self.app_dpi.load(Ordering::Relaxed);
 
         // Create a new font based on the current DPI
         let font = match w::HFONT::CreateFont(
@@ -543,14 +537,7 @@ impl MyWindow {
             let self2 = self.clone();
             move |create| -> w::AnyResult<i32> {
                 // Store the current DPI
-                self2.app_dpi.write()
-                    .map(|mut app_dpi| {
-                        *app_dpi = self2.wnd.hwnd().GetDpiForWindow();
-                    })
-                    .map_err(|e| {
-                        eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")
-                    })
-                    .ok();
+                self2.app_dpi.store(self2.wnd.hwnd().GetDpiForWindow(), Ordering::Relaxed);
 
                 // Change the font in the buttons and label
                 self2.update_font();
@@ -647,17 +634,9 @@ impl MyWindow {
         self.wnd.on().wm(co::WM::DPICHANGED, {
             let self2 = self.clone();
             move |dpi_changed: w::msg::WndMsg| {
-                println!("DPI changed to {}", dpi_changed.wparam & 0xFFFF);
                 // Store the new DPI of the window
-                self2.app_dpi.write()
-                    .map(|mut app_dpi| {
-                        // LOWORD and HIWORD of the wParam both contain the new DPI
-                        *app_dpi = (dpi_changed.wparam & 0xFFFF) as u32;
-                    })
-                    .map_err(|e| {
-                        eprintln!("Failed to set window DPI - Failed to write to RwLock: {e}")
-                    })
-                    .ok();
+                // LOWORD and HIWORD of the wParam contains the X and Y DPI values, which should be the same
+                self2.app_dpi.store((dpi_changed.wparam & 0xFFFF) as u32, Ordering::Relaxed);
 
                 // Change the font of the label
                 self2.update_font();
@@ -673,13 +652,7 @@ impl MyWindow {
             let self2 = self.clone();
             move |min_max| {
                 // Get the current dpi of the window
-                let app_dpi = match self2.app_dpi.read() {
-                    Ok(app_dpi) => *app_dpi,
-                    Err(e) => {
-                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
-                        120
-                    }
-                };
+                let app_dpi = self2.app_dpi.load(Ordering::Relaxed);
 
                 // Set the minimum size of the window
                 min_max.info.ptMinTrackSize.x = (305 * app_dpi / 120) as i32;
@@ -693,13 +666,7 @@ impl MyWindow {
             let self2 = self.clone();
             move |size| -> w::AnyResult<()> {
                 // Get the current dpi of the window
-                let app_dpi = match self2.app_dpi.read() {
-                    Ok(app_dpi) => *app_dpi,
-                    Err(e) => {
-                        eprintln!("Failed to read DPI - Failed to read from RwLock: {e}");
-                        120
-                    }
-                };
+                let app_dpi = self2.app_dpi.load(Ordering::Relaxed);
 
                 // Get the new window dimensions
                 let new_size = RECT {
