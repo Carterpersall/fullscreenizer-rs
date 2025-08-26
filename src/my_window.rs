@@ -1012,10 +1012,7 @@ impl MyWindow {
                 };
 
                 // Set the window style
-                if unsafe { window.SetWindowLongPtr(co::GWLP::STYLE, (co::WS::POPUP.raw() | co::WS::VISIBLE.raw()) as isize) } == 0 {
-                    show_error_message(&format!("Failed to fullscreenize window - SetWindowLongPtr failed with error: {}", GetLastError()));
-                    return Ok(());
-                }
+                window.set_style(co::WS::POPUP | co::WS::VISIBLE);
 
                 // Set the window size
                 match AdjustWindowRectEx(rect, window.style(), false, window.style_ex()) {
@@ -1035,15 +1032,8 @@ impl MyWindow {
                         }
                     )
                 }
-                .raw().shr(12u32) - 1 == 1u32 &&
-                unsafe {
-                    window.SetWindowLongPtr(
-                        co::GWLP::EXSTYLE,
-                        (window.style_ex().raw() | co::WS_EX::TOPMOST.raw()) as isize,
-                    )
-                } == 0 {
-                    show_error_message(&format!("Failed to set window to stay on top - SetWindowLongPtr failed with error: {}", GetLastError()));
-                    return Ok(());
+                .raw().shr(12u32) - 1 == 1u32 {
+                    window.set_style_ex(window.style_ex() | co::WS_EX::TOPMOST);
                 }
 
                 // Set the window position
