@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use std::ops::Shr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Mutex, MutexGuard, RwLock};
+use std::sync::{Mutex, MutexGuard};
 
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
@@ -11,8 +11,8 @@ use winsafe::gui::dpi;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::prelude::{GuiParent, GuiWindow, Handle};
 use winsafe::{
-    self as w, AdjustWindowRectEx, COLORREF, DwmAttr, EnumWindows, GetLastError, HBRUSH, HICON,
-    HIMAGELIST, HwndPlace, POINT, RECT, SIZE, co, gui,
+    self as w, AdjustWindowRectEx, COLORREF, DwmAttr, EnumWindows, HBRUSH, HICON, HIMAGELIST,
+    HwndPlace, POINT, RECT, SIZE, co, gui,
 };
 
 /// Macro to handle the result of a mutex lock
@@ -52,6 +52,7 @@ pub struct MyWindow {
     // Shared resources
     app_font: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
     app_dpi: Arc<AtomicU32>,
+    window_icons: Arc<Mutex<Vec<w::guard::DestroyIconGuard>>>,
 }
 
 impl MyWindow {
@@ -187,6 +188,8 @@ impl MyWindow {
         // The current DPI of the window
         // This is used to scale the window elements based on a 125% (120 DPI) display
         let app_dpi = Arc::new(AtomicU32::new(120));
+        // A vector to store the icons of the windows
+        let window_icons = Arc::new(Mutex::new(Vec::new()));
 
         let new_self = Self {
             wnd,
@@ -201,6 +204,7 @@ impl MyWindow {
             app_font,
             app_dpi,
             use_icons,
+            window_icons,
         };
 
         new_self.events();
@@ -230,7 +234,7 @@ impl MyWindow {
             co::CHARSET::DEFAULT,
             co::OUT_PRECIS::DEFAULT,
             co::CLIP::DEFAULT_PRECIS,
-            co::QUALITY::DRAFT,
+            co::QUALITY::DEFAULT,
             co::PITCH::DEFAULT,
             "Segoe UI",
         ) {
@@ -427,89 +431,122 @@ impl MyWindow {
         }
     }
 
-    fn refresh_process_list(&self, windows: &mut MutexGuard<Vec<w::HWND>>) -> w::AnyResult<()> {
-        // Clear the process list and window vector
-        self.process_list.items().delete_all()?;
-        windows.clear();
+    fn refresh_process_list(
+        &self,
+        windows: &mut MutexGuard<Vec<w::HWND>>,
+        scan_windows: bool,
+    ) -> w::AnyResult<()> {
+        // Get the current DPI
+        let dpi = self.app_dpi.load(Ordering::Relaxed) as i32;
 
         // Create an image list to store the icons
-        let mut image_list = HIMAGELIST::Create(SIZE::with(16, 16), co::ILC::COLOR32, 0, 100)
-            .unwrap_or_else(|e| {
-                // If creating the image list failed, disable the use of icons
-                self.use_icons.store(false, Ordering::SeqCst);
-                eprintln!("Imagelist Creation failed {e}");
-                unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
-            });
+        let mut image_list = HIMAGELIST::Create(
+            SIZE::with(16 * dpi / 120, 16 * dpi / 120),
+            co::ILC::COLOR32,
+            0,
+            100,
+        )
+        .unwrap_or_else(|e| {
+            // If creating the image list failed, disable the use of icons
+            self.use_icons.store(false, Ordering::SeqCst);
+            eprintln!("Imagelist Creation failed {e}");
+            unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
+        });
 
         // Enumerate over all open windows
-        EnumWindows(|hwnd: w::HWND| -> bool {
-            // Skip invisible windows
-            if !hwnd.IsWindowVisible() {
-                return true;
+        if scan_windows {
+            // Clear the process list, window vector, and icon cache
+            self.process_list.items().delete_all()?;
+            windows.clear();
+            if let Ok(mut window_icons) = self.window_icons.lock() {
+                window_icons.clear();
             }
 
-            // Get the window title and return if an error occurred
-            let Ok(title) = hwnd.GetWindowText() else {
-                return true;
-            };
-            if title.is_empty() {
-                return true;
-            }
+            EnumWindows(|hwnd: w::HWND| -> bool {
+                // Skip invisible windows
+                if !hwnd.IsWindowVisible() {
+                    return true;
+                }
 
-            let icon_id = if self.use_icons.load(Ordering::SeqCst) {
-                // Get the window icon
-                let icon = match unsafe {
-                    HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
-                        co::WM::GETICON,
-                        co::ICON_SZ::SMALL.raw() as usize,
-                        0,
-                    )) as *mut _)
-                } {
-                    icon if icon.as_opt().is_some() => icon,
-                    _ => {
-                        // If retrieving the icon failed, try a different method
-                        // See https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-geticon#remarks
-                        let icon = unsafe {
-                            HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICONSM) as *mut _)
-                        };
+                // Get the window title and return if an error occurred
+                let Ok(title) = hwnd.GetWindowText() else {
+                    return true;
+                };
+                if title.is_empty() {
+                    return true;
+                }
 
-                        if icon == HICON::NULL || icon == HICON::INVALID {
-                            // Try retrieving the large icon
-                            unsafe {
-                                HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICON) as *mut _)
+                let icon_id = if self.use_icons.load(Ordering::SeqCst) {
+                    // Get the window icon
+                    let icon = match unsafe {
+                        HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
+                            co::WM::GETICON,
+                            co::ICON_SZ::SMALL.raw() as usize,
+                            0,
+                        )) as *mut _)
+                    } {
+                        icon if icon.as_opt().is_some() => icon,
+                        _ => {
+                            // If retrieving the icon failed, try a different method
+                            // See https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-geticon#remarks
+                            let icon = unsafe {
+                                HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICONSM) as *mut _)
+                            };
+
+                            if icon == HICON::NULL || icon == HICON::INVALID {
+                                // Try retrieving the large icon
+                                unsafe {
+                                    HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICON) as *mut _)
+                                }
+                            } else {
+                                icon
                             }
-                        } else {
-                            icon
                         }
+                    };
+
+                    // Cache the icon
+                    if let Ok(mut window_icons) = self.window_icons.lock() {
+                        window_icons.push(icon.CopyIcon().unwrap_or_else(|_| unsafe {
+                            w::guard::DestroyIconGuard::new(HICON::NULL)
+                        }));
                     }
+                    // Add the icon to the image list
+                    Option::from(image_list.AddIcon(&icon).unwrap_or_else(|e| {
+                        eprintln!("AddIcon failed {e}\n");
+                        u32::MAX
+                    }))
+                } else {
+                    None
                 };
 
-                // Add the icon to the image list
-                Option::from(image_list.AddIcon(&icon).unwrap_or_else(|e| {
-                    eprintln!("AddIcon failed {e}\n");
-                    u32::MAX
-                }))
-            } else {
-                None
-            };
+                // Add the window to the vector
+                windows.push(hwnd);
 
-            // Add the window to the vector
-            windows.push(hwnd);
+                // Add the window to the list
+                self.process_list
+                    .items()
+                    .add(&[title], icon_id, ())
+                    .map_err(|e| {
+                        eprintln!("Failed to add item to process list - Add failed: {e}");
+                    })
+                    .ok();
 
-            // Add the window to the list
-            self.process_list
-                .items()
-                .add(&[title], icon_id, ())
-                .map_err(|e| {
-                    eprintln!("Failed to add item to process list - Add failed: {e}");
-                })
-                .ok();
-
-            // Return true to continue enumerating
-            true
-        })
-        .map_err(|e| eprintln!("EnumWindows failed: {e}"))
-        .ok();
+                // Return true to continue enumerating
+                true
+            })
+            .map_err(|e| eprintln!("EnumWindows failed: {e}"))
+            .ok();
+        } else {
+            // Add icons to the new image list from the icon cache
+            if let Ok(window_icons) = self.window_icons.lock() {
+                for icon in window_icons.iter() {
+                    image_list.AddIcon(icon).unwrap_or_else(|e| {
+                        eprintln!("AddIcon failed {e}\n");
+                        u32::MAX
+                    });
+                }
+            }
+        }
 
         // Set the image list for the listview
         let hil = image_list.leak();
@@ -533,6 +570,9 @@ impl MyWindow {
     }
 
     fn events(&self) {
+        // Create a vector in a mutex to store the open windows
+        let windows: Arc<Mutex<Vec<w::HWND>>> = Arc::new(Mutex::new(Vec::new()));
+
         self.wnd.on().wm_create({
             let self2 = self.clone();
             move |create| -> w::AnyResult<i32> {
@@ -633,6 +673,7 @@ impl MyWindow {
         // Handle DPI changes
         self.wnd.on().wm(co::WM::DPICHANGED, {
             let self2 = self.clone();
+            let windows = windows.clone();
             move |dpi_changed: w::msg::WndMsg| {
                 // Store the new DPI of the window
                 // LOWORD and HIWORD of the wParam contains the X and Y DPI values, which should be the same
@@ -640,6 +681,21 @@ impl MyWindow {
 
                 // Change the font of the label
                 self2.update_font();
+
+                // Refresh the process list without scanning for new windows
+                match windows.lock() {
+                    Ok(mut windows) => {
+                        // Refresh the process list
+                        self2.refresh_process_list(&mut windows, false)?;
+                    }
+                    Err(e) => {
+                        // Show a popup window with the error message
+                        show_error_message(
+                            format!("Failed to refresh process list - Mutex lock failed: {e}")
+                                .as_str(),
+                        );
+                    }
+                }
 
                 // Call the default window procedure
                 unsafe { self2.wnd.hwnd().DefWindowProc(dpi_changed) };
@@ -929,9 +985,6 @@ impl MyWindow {
             }
         });
 
-        // Create a vector in a mutex to store the open windows
-        let windows: Arc<Mutex<Vec<w::HWND>>> = Arc::new(Mutex::new(Vec::new()));
-
         self.refresh_btn.on().bn_clicked({
             let self2 = self.clone();
             let windows = windows.clone();
@@ -940,7 +993,7 @@ impl MyWindow {
                 match windows.lock() {
                     Ok(mut windows) => {
                         // Refresh the process list
-                        self2.refresh_process_list(&mut windows)?;
+                        self2.refresh_process_list(&mut windows, true)?;
                     }
                     Err(e) => {
                         // Show a popup window with the error message
