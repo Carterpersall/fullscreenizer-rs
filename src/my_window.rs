@@ -2,8 +2,9 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use std::ops::Shr;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, RwLock};
 
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
@@ -50,7 +51,7 @@ pub struct MyWindow {
     use_icons: Arc<AtomicBool>,
 
     // Shared resources
-    app_font: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
+    app_font: Rc<RwLock<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
     app_dpi: Arc<AtomicU32>,
     window_icons: Arc<Mutex<Vec<w::guard::DestroyIconGuard>>>,
 }
@@ -184,7 +185,7 @@ impl MyWindow {
 
         /* Shared Resources */
         // The application's font
-        let app_font = Arc::new(Mutex::new(None));
+        let app_font = Rc::new(RwLock::new(None));
         // The current DPI of the window
         // This is used to scale the window elements based on a 125% (120 DPI) display
         let app_dpi = Arc::new(AtomicU32::new(120));
@@ -246,12 +247,12 @@ impl MyWindow {
         };
 
         // Store the font in the shared resource
-        if let Ok(mut app_font) = self.app_font.lock() {
+        if let Ok(mut app_font) = self.app_font.write() {
             *app_font = Some(font);
         }
 
         // Update the font for all controls
-        match self.app_font.lock() {
+        match self.app_font.read() {
             Ok(app_font) => {
                 if let Some(font) = app_font.as_ref() {
                     unsafe {
