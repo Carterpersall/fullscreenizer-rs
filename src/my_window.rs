@@ -16,24 +16,6 @@ use winsafe::{
     HwndPlace, POINT, RECT, SIZE, co, gui,
 };
 
-/// Macro to handle the result of a mutex lock
-/// # Arguments
-/// * `result` - The result of the mutex lock
-/// # Returns
-/// * If the lock is successful, returns Some(guard)
-/// * If the lock fails, prints an error message and returns None
-macro_rules! handle_lock_result {
-    ($result:expr) => {
-        match $result {
-            Ok(guard) => Some(guard),
-            Err(e) => {
-                eprintln!("Failed to lock mutex: {}", e);
-                None
-            }
-        }
-    };
-}
-
 #[derive(Clone)]
 pub struct MyWindow {
     // Window elements
@@ -912,7 +894,7 @@ impl MyWindow {
                     .map_err(|e| eprintln!("SetBkColor on the label failed: {e}"));
 
                 // If the brush in the Arc Mutex is NULL, create a new solid brush
-                if let Some(mut label_hbrush) = handle_lock_result!(label_hbrush.lock()) {
+                if let Ok(mut label_hbrush) = label_hbrush.lock() {
                     if *label_hbrush == HBRUSH::NULL {
                         HBRUSH::CreateSolidBrush(color).map_or_else(
                             |e| {
@@ -927,7 +909,7 @@ impl MyWindow {
                 }
 
                 // Set the background color of the label
-                Ok(handle_lock_result!(label_hbrush.lock())
+                Ok(label_hbrush.lock()
                     .map_or(HBRUSH::NULL, |hbrush| unsafe { hbrush.raw_copy() }))
             }
         });
