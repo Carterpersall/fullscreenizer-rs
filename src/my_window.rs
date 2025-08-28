@@ -46,7 +46,7 @@ pub struct MyWindow {
     fullscreenize_btn: gui::Button,
 
     // Settings
-    is_dark_mode: Arc<Mutex<bool>>,
+    is_dark_mode: Arc<AtomicBool>,
     use_icons: Arc<AtomicBool>,
 
     // Shared resources
@@ -178,7 +178,7 @@ impl MyWindow {
 
         /* Settings */
         // Whether dark mode is enabled
-        let is_dark_mode = Arc::new(Mutex::new(false));
+        let is_dark_mode = Arc::new(AtomicBool::new(false));
         // Whether to use icons in the process list
         let use_icons = Arc::new(AtomicBool::new(true));
 
@@ -374,8 +374,8 @@ impl MyWindow {
 
     fn set_system_theme(&self) {
         // Check if dark mode is enabled using the registry
-        if let Some(mut is_dark_mode) = handle_lock_result!(self.is_dark_mode.lock()) {
-            *is_dark_mode = w::HKEY::CURRENT_USER
+        let dark_mode =
+            w::HKEY::CURRENT_USER
                 .RegOpenKeyEx(
                     Some("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
                     co::REG_OPTION::default(),
@@ -399,35 +399,38 @@ impl MyWindow {
                         }
                     },
                 );
-            if is_dark_mode.to_owned() {
-                // Enable dark mode on the window
-                self.enable_dark_mode();
-            } else {
-                // Set the background color of the checkbox listview to the same as the window background
-                unsafe {
-                    self.top_toggle.hwnd().SendMessage(SetBkColor {
-                        color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
-                    })
-                }
-                .map_err(|e| eprintln!("SetBkColor failed: {e}"))
-                .ok();
 
-                // Set the background color of the element in the checkbox listview
-                unsafe {
-                    self.top_toggle.hwnd().SendMessage(SetTextBkColor {
-                        color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
-                    })
-                }
-                .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
-                .ok();
+        // Store the dark mode state
+        self.is_dark_mode.store(dark_mode, Ordering::Relaxed);
 
-                // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
-                self.process_list
-                    .hwnd()
-                    .SetWindowTheme("Explorer", None)
-                    .map_err(|e| eprintln!("SetWindowTheme failed: {e}"))
-                    .ok();
+        if dark_mode {
+            // Enable dark mode on the window
+            self.enable_dark_mode();
+        } else {
+            // Set the background color of the checkbox listview to the same as the window background
+            unsafe {
+                self.top_toggle.hwnd().SendMessage(SetBkColor {
+                    color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
+                })
             }
+            .map_err(|e| eprintln!("SetBkColor failed: {e}"))
+            .ok();
+
+            // Set the background color of the element in the checkbox listview
+            unsafe {
+                self.top_toggle.hwnd().SendMessage(SetTextBkColor {
+                    color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
+                })
+            }
+            .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
+            .ok();
+
+            // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
+            self.process_list
+                .hwnd()
+                .SetWindowTheme("Explorer", None)
+                .map_err(|e| eprintln!("SetWindowTheme failed: {e}"))
+                .ok();
         }
     }
 
@@ -890,17 +893,15 @@ impl MyWindow {
                 // Light mode background color and dark mode text color
                 let mut color = COLORREF::from_rgb(0xF0, 0xF0, 0xF0);
 
-                if let Some(is_dark_mode) = handle_lock_result!(self2.is_dark_mode.lock()) {
-                    if *is_dark_mode {
-                        // Set the text color of the label to white
-                        let _old_color = ctl
-                            .hdc
-                            .SetTextColor(color)
-                            .map_err(|e| eprintln!("SetTextColor on the label failed: {e}"));
+                if self2.is_dark_mode.load(Ordering::Relaxed) {
+                    // Set the text color of the label to white
+                    let _old_color = ctl
+                        .hdc
+                        .SetTextColor(color)
+                        .map_err(|e| eprintln!("SetTextColor on the label failed: {e}"));
 
-                        // Set the color to the dark mode background color
-                        color = COLORREF::from_rgb(0x1E, 0x1E, 0x1E);
-                    }
+                    // Set the color to the dark mode background color
+                    color = COLORREF::from_rgb(0x1E, 0x1E, 0x1E);
                 }
 
                 // Set the background color of the label's text
@@ -934,9 +935,7 @@ impl MyWindow {
             let self2 = self.clone();
             move |erase_bkgnd| -> w::AnyResult<i32> {
                 // Set the background color of the window in dark mode
-                if handle_lock_result!(self2.is_dark_mode.lock())
-                    .map_or(false, |is_dark_mode| *is_dark_mode)
-                {
+                if self2.is_dark_mode.load(Ordering::Relaxed) {
                     // Create a solid brush with the dark mode background color
                     match HBRUSH::CreateSolidBrush(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)) {
                         Ok(hbrush) => {
