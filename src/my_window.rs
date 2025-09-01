@@ -35,6 +35,7 @@ pub struct MyWindow {
     // Shared resources
     app_font: Rc<RwLock<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
     app_dpi: Arc<AtomicU32>,
+    imagelist: Arc<Mutex<Option<w::guard::ImageListDestroyGuard>>>,
     window_icons: Arc<Mutex<Vec<w::guard::DestroyIconGuard>>>,
 }
 
@@ -171,6 +172,8 @@ impl MyWindow {
         // The current DPI of the window
         // This is used to scale the window elements based on a 125% (120 DPI) display
         let app_dpi = Arc::new(AtomicU32::new(120));
+        // The image list for the window icons
+        let imagelist = Arc::new(Mutex::new(None));
         // A vector to store the icons of the windows
         let window_icons = Arc::new(Mutex::new(Vec::new()));
 
@@ -187,6 +190,7 @@ impl MyWindow {
             app_font,
             app_dpi,
             use_icons,
+            imagelist,
             window_icons,
         };
 
@@ -426,7 +430,7 @@ impl MyWindow {
         let dpi = self.app_dpi.load(Ordering::Relaxed) as i32;
 
         // Create an image list to store the icons
-        let mut image_list = HIMAGELIST::Create(
+        let image_list = HIMAGELIST::Create(
             SIZE::with(16 * dpi / 120, 16 * dpi / 120),
             co::ILC::COLOR32,
             0,
@@ -524,7 +528,9 @@ impl MyWindow {
             .ok();
         } else {
             // Add icons to the new image list from the icon cache
-            if let Ok(window_icons) = self.window_icons.lock() {
+            if self.use_icons.load(Ordering::SeqCst)
+                && let Ok(window_icons) = self.window_icons.lock()
+            {
                 for icon in window_icons.iter() {
                     image_list.AddIcon(icon).unwrap_or_else(|e| {
                         eprintln!("AddIcon failed {e}\n");
@@ -535,21 +541,18 @@ impl MyWindow {
         }
 
         // Set the image list for the listview
-        let hil = image_list.leak();
-        let old_hil = unsafe {
+        let _ = unsafe {
             self.process_list
                 .hwnd()
                 .SendMessage(w::msg::lvm::SetImageList {
-                    himagelist: Some(hil),
+                    himagelist: Some(image_list.raw_copy()),
                     kind: co::LVSIL::SMALL,
                 })
         };
 
-        // Drop the old imagelist
-        if let Some(old_hil) = old_hil {
-            unsafe {
-                let _ = ImageListDestroyGuard::new(old_hil);
-            }
+        // Store the image list, dropping the old one
+        if let Ok(mut imagelist) = self.imagelist.lock() {
+            imagelist.replace(image_list);
         }
 
         Ok(())
