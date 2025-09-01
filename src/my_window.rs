@@ -1,7 +1,6 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use std::ops::Shr;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
@@ -210,7 +209,7 @@ impl MyWindow {
         let font = match w::HFONT::CreateFont(
             SIZE {
                 cx: 0,
-                cy: -((15 * app_dpi / 120) as i32),
+                cy: -w::MulDiv(15, app_dpi as i32, 120),
             },
             0,
             0,
@@ -1070,7 +1069,8 @@ impl MyWindow {
                         }
                     )
                 }
-                .raw().shr(12u32) - 1 == 1u32 {
+                // 0x1000 = Unchecked, 0x2000 = Checked
+                .raw() & 0x2000 != 0 {
                     window.set_style_ex(window.style_ex() | co::WS_EX::TOPMOST);
                 }
 
