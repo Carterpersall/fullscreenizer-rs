@@ -501,7 +501,9 @@ impl MyWindow {
                     }
                     // Add the icon to the image list
                     Option::from(image_list.AddIcon(&icon).unwrap_or_else(|e| {
-                        eprintln!("AddIcon failed {e}\n");
+                        eprintln!("AddIcon failed: '{e}' - GetLastError: '{}'", w::GetLastError());
+                        // Return an invalid ID to display a blank icon
+                        // Returning None causes the first icon to be displayed instead of a blank one
                         u32::MAX
                     }))
                 } else {
