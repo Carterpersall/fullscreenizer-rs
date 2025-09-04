@@ -30,6 +30,7 @@ pub struct MyWindow {
     // Settings
     is_dark_mode: Arc<AtomicBool>,
     use_icons: Arc<AtomicBool>,
+    excluded_apps: Arc<[String]>,
 
     // Shared resources
     app_font: Rc<RwLock<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
@@ -46,6 +47,7 @@ impl MyWindow {
             size: dpi(305, 400),
             style: gui::WindowMainOpts::default().style
                 | co::WS::OVERLAPPEDWINDOW
+                | co::WS::CLIPCHILDREN
                 | co::WS::SIZEBOX, // window can be resized
             ..Default::default()
         });
@@ -164,6 +166,13 @@ impl MyWindow {
         let is_dark_mode = Arc::new(AtomicBool::new(false));
         // Whether to use icons in the process list
         let use_icons = Arc::new(AtomicBool::new(true));
+        // Apps excluded from the process list
+        let excluded_apps = Arc::new([
+            "Program Manager",
+            "Windows Input Experience",
+            "PopupHost",
+            "System tray overflow window.",
+        ].map(String::from));
 
         /* Shared Resources */
         // The application's font
@@ -186,9 +195,10 @@ impl MyWindow {
             help_btn,
             fullscreenize_btn,
             is_dark_mode,
+            use_icons,
+            excluded_apps,
             app_font,
             app_dpi,
-            use_icons,
             imagelist,
             window_icons,
         };
@@ -461,7 +471,7 @@ impl MyWindow {
                 let Ok(title) = hwnd.GetWindowText() else {
                     return true;
                 };
-                if title.is_empty() {
+                if title.is_empty() || self.excluded_apps.contains(&title) {
                     return true;
                 }
 
@@ -500,12 +510,13 @@ impl MyWindow {
                         }));
                     }
                     // Add the icon to the image list
-                    Option::from(image_list.AddIcon(&icon).unwrap_or_else(|e| {
-                        eprintln!("AddIcon failed: '{e}' - GetLastError: '{}'", w::GetLastError());
-                        // Return an invalid ID to display a blank icon
-                        // Returning None causes the first icon to be displayed instead of a blank one
-                        u32::MAX
-                    }))
+                    match image_list.AddIcon(&icon) {
+                        Ok(id) => Some(id),
+                        Err(e) => {
+                            eprintln!("AddIcon failed: '{e}' - GetLastError: '{}'", w::GetLastError());
+                            None
+                        }
+                    }
                 } else {
                     None
                 };

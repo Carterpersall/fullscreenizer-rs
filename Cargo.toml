@@ -7,7 +7,7 @@ edition = "2024"
 [dependencies.winsafe]
 #version = "0.0.25"
 git = "https://github.com/rodrigocfd/winsafe.git"
-rev = "8ce45b3"
+rev = "c72d112"
 features = [
     "advapi",
     "dwm",
