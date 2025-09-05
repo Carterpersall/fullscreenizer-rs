@@ -167,12 +167,15 @@ impl MyWindow {
         // Whether to use icons in the process list
         let use_icons = Arc::new(AtomicBool::new(true));
         // Apps excluded from the process list
-        let excluded_apps = Arc::new([
-            "Program Manager",
-            "Windows Input Experience",
-            "PopupHost",
-            "System tray overflow window.",
-        ].map(String::from));
+        let excluded_apps = Arc::new(
+            [
+                "Program Manager",
+                "Windows Input Experience",
+                "PopupHost",
+                "System tray overflow window.",
+            ]
+            .map(String::from),
+        );
 
         /* Shared Resources */
         // The application's font
@@ -263,10 +266,12 @@ impl MyWindow {
                             hfont: font.raw_copy(),
                             redraw: true,
                         });
-                        self.fullscreenize_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: font.raw_copy(),
-                            redraw: true,
-                        });
+                        self.fullscreenize_btn
+                            .hwnd()
+                            .SendMessage(w::msg::wm::SetFont {
+                                hfont: font.raw_copy(),
+                                redraw: true,
+                            });
                     }
                 }
             }
@@ -370,31 +375,30 @@ impl MyWindow {
 
     fn set_system_theme(&self) {
         // Check if dark mode is enabled using the registry
-        let dark_mode =
-            w::HKEY::CURRENT_USER
-                .RegOpenKeyEx(
-                    Some("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
-                    co::REG_OPTION::default(),
-                    co::KEY::READ,
-                )
-                .and_then(|key| key.RegQueryValueEx(Some("AppsUseLightTheme")))
-                .map_or_else(
-                    |e| {
-                        eprintln!("Getting the system theme failed: {e}");
-                        // Default to light mode
-                        false
-                    },
-                    |result| {
-                        match result {
-                            // If the value is 1, light mode is enabled
-                            w::RegistryValue::Dword(value) => value != 1,
-                            _ => {
-                                // Default to light mode
-                                false
-                            }
+        let dark_mode = w::HKEY::CURRENT_USER
+            .RegOpenKeyEx(
+                Some("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+                co::REG_OPTION::default(),
+                co::KEY::READ,
+            )
+            .and_then(|key| key.RegQueryValueEx(Some("AppsUseLightTheme")))
+            .map_or_else(
+                |e| {
+                    eprintln!("Getting the system theme failed: {e}");
+                    // Default to light mode
+                    false
+                },
+                |result| {
+                    match result {
+                        // If the value is 1, light mode is enabled
+                        w::RegistryValue::Dword(value) => value != 1,
+                        _ => {
+                            // Default to light mode
+                            false
                         }
-                    },
-                );
+                    }
+                },
+            );
 
         // Store the dark mode state
         self.is_dark_mode.store(dark_mode, Ordering::Relaxed);
@@ -513,7 +517,10 @@ impl MyWindow {
                     match image_list.AddIcon(&icon) {
                         Ok(id) => Some(id),
                         Err(e) => {
-                            eprintln!("AddIcon failed: '{e}' - GetLastError: '{}'", w::GetLastError());
+                            eprintln!(
+                                "AddIcon failed: '{e}' - GetLastError: '{}'",
+                                w::GetLastError()
+                            );
                             None
                         }
                     }
@@ -578,7 +585,9 @@ impl MyWindow {
             let self2 = self.clone();
             move |create| -> w::AnyResult<i32> {
                 // Store the current DPI
-                self2.app_dpi.store(self2.wnd.hwnd().GetDpiForWindow(), Ordering::Relaxed);
+                self2
+                    .app_dpi
+                    .store(self2.wnd.hwnd().GetDpiForWindow(), Ordering::Relaxed);
 
                 // Change the font in the buttons and label
                 self2.update_font();
@@ -678,7 +687,9 @@ impl MyWindow {
             move |dpi_changed: w::msg::WndMsg| {
                 // Store the new DPI of the window
                 // LOWORD and HIWORD of the wParam contains the X and Y DPI values, which should be the same
-                self2.app_dpi.store((dpi_changed.wparam & 0xFFFF) as u32, Ordering::Relaxed);
+                self2
+                    .app_dpi
+                    .store((dpi_changed.wparam & 0xFFFF) as u32, Ordering::Relaxed);
 
                 // Change the font of the label
                 self2.update_font();
@@ -851,10 +862,7 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with(
-                            (13 * app_dpi / 120) as i32,
-                            0,
-                        ),
+                        POINT::with((13 * app_dpi / 120) as i32, 0),
                         btn_size,
                         SWP::NOZORDER,
                     )
@@ -924,7 +932,8 @@ impl MyWindow {
                 }
 
                 // Set the background color of the label
-                Ok(label_hbrush.lock()
+                Ok(label_hbrush
+                    .lock()
                     .map_or(HBRUSH::NULL, |hbrush| unsafe { hbrush.raw_copy() }))
             }
         });
