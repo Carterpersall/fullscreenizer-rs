@@ -78,7 +78,7 @@ impl MyWindow {
                     | co::LVS::NOLABELWRAP
                     | co::LVS::SINGLESEL
                     | co::LVS::REPORT,
-                control_ex_style: co::LVS_EX::DOUBLEBUFFER | co::LVS_EX::AUTOSIZECOLUMNS,
+                control_ex_style: co::LVS_EX::DOUBLEBUFFER,
                 window_style: co::WS::CHILD
                     | co::WS::VISIBLE
                     | co::WS::TABSTOP
@@ -639,25 +639,14 @@ impl MyWindow {
                     eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
                 }).ok();
 
-                // The listview shows a vertical line when column width < listview width, and a
-                // horizontal scrollbar when column width > listview width. LVS_EX::AUTOSIZECOLUMNS
-                // removes the scrollbar but creates a timing problem: auto-sizing happens after
-                // WM_SIZE on the initial paint, so the vertical line persists until the next resize.
-                // Solution: send WM_SIZE after the listview is created, triggering a column resize.
-                match self2.wnd.hwnd().GetClientRect() {
-                    Ok(rect) => unsafe {
-                        self2.wnd.hwnd().SendMessage(w::msg::wm::Size {
-                            request: co::SIZE_R::RESTORED,
-                            client_area: SIZE::with(
-                                rect.right - rect.left,
-                                rect.bottom - rect.top,
-                            ),
-                        });
-                    },
-                    Err(e) => {
-                        eprintln!("Failed to get client rect - GetClientRect Failed: {e}");
-                    }
-                };
+                // Hide the process list's horizontal scrollbar
+                // The scrollbar would otherwise appear since the process list's column is wider than the listview
+                self2.process_list.hwnd().ShowScrollBar(
+                    co::SBB::HORZ,
+                    false
+                ).map_err(|e| {
+                    eprintln!("Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}");
+                }).ok();
 
                 Ok(())
             }
@@ -782,7 +771,8 @@ impl MyWindow {
                     })
                     .ok();
 
-                // Resize the process list column
+                // Resize the only column in the process list to be slightly wider than the listview
+                // This prevents a vertical line indicating the end of the column from being visible
                 self2
                     .process_list
                     .cols()
@@ -790,6 +780,19 @@ impl MyWindow {
                     .set_width((new_size.right - new_size.left) - (16 * app_dpi / 120) as i32)
                     .map_err(|e| {
                         eprintln!("Failed to resize process list column - SetWidth Failed: {e}")
+                    })
+                    .ok();
+
+                // Hide the process list's horizontal scrollbar
+                // The scrollbar would otherwise appear since the process list's column is wider than the listview
+                self2
+                    .process_list
+                    .hwnd()
+                    .ShowScrollBar(co::SBB::HORZ, false)
+                    .map_err(|e| {
+                        eprintln!(
+                            "Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}"
+                        );
                     })
                     .ok();
 
