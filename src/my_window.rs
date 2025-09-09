@@ -1,10 +1,30 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
+use std::os::windows::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
+use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, GENERIC_READ, TRUE};
+use windows::Win32::Graphics::Gdi::{
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateDIBSection, DIB_RGB_COLORS,
+};
+use windows::Win32::Graphics::Imaging::{
+    CLSID_WICImagingFactory, GUID_WICPixelFormat32bppBGRA, IWICBitmapDecoder,
+    IWICBitmapFrameDecode, IWICFormatConverter, IWICImagingFactory, WICBitmapDitherTypeNone,
+    WICBitmapPaletteTypeMedianCut, WICDecodeMetadataCacheOnLoad,
+};
+use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
+use windows::Win32::Storage::Packaging::Appx::{
+    FindPackagesByPackageFamily, GetPackagePathByFullName, PACKAGE_FILTER_HEAD,
+};
+use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
+use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
+use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, GetWindowModuleFileNameW, ICONINFO};
+use windows::core::{PCWSTR, PWSTR};
+use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::gui::dpi;
@@ -477,7 +497,62 @@ impl MyWindow {
                 };
                 if title.is_empty() || self.excluded_apps.contains(&title) {
                     return true;
+                } else {
+                    w::SetLastError(w::co::ERROR::SUCCESS);
+                    let path = hwnd.GetWindowModuleFileName();
+                    if path.is_empty() {
+                        // Some windows have no associated file path, such as UWP apps
+                        let pid = hwnd.GetWindowThreadProcessId();
+                        println!("Found window with title: '{title}' and no associated file path, PID: {pid:?}, GetLastError: '{}'", w::GetLastError());
+                    } else {
+                        // Print the file path of the window
+                        println!("Found window with title: '{title}' and Path '{path}'");
+                    }
                 }
+
+                // Check if the title is already in the list
+                // UWP apps can have multiple windows with the same title
+                // If the check passes, return the file path of the already added window and the current window
+                /* if self
+                    .process_list
+                    .items()
+                    .iter()
+                    .any(|item| item.text(0) == title)
+                {
+                    // Print the file path of the already added window
+                    let _ = self.process_list.items().iter().find_map(|item| {
+                        if item.text(0) == title {
+                            //let existing_index = item.index();
+                            // Get the HWND of the already added window
+                            let dup_hwnd = windows.get(item.index() as usize).map(|hwnd| {
+                                if hwnd.IsWindow() {
+                                    Some(hwnd)
+                                } else {
+                                    None
+                                }
+                            });
+                            if let Some(Some(dup_hwnd)) = dup_hwnd {
+                                // Get the file path of the already added window
+                                /* let pid = dup_hwnd.GetWindowThreadProcessId();
+                                unsafe {
+                                    OpenProcess(
+                                        PROCESS_ALL_ACCESS,
+                                        false,
+                                        pid.1,
+                                    ) */
+                                let result = dup_hwnd.GetWindowModuleFileName();
+                                println!(
+                                    "Skipped adding window '{}' with duplicate title. File path: '{result}', GetLastError: '{}'",
+                                    title,
+                                    w::GetLastError()
+                                );
+                            }
+                            Some(())
+                        } else {
+                            None
+                        }
+                    });
+                } */
 
                 let icon_id = if self.use_icons.load(Ordering::SeqCst) {
                     // Get the window icon
@@ -498,8 +573,15 @@ impl MyWindow {
 
                             if icon == HICON::NULL || icon == HICON::INVALID {
                                 // Try retrieving the large icon
-                                unsafe {
+                                let icon = unsafe {
                                     HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICON) as *mut _)
+                                };
+
+                                if icon == HICON::NULL || icon == HICON::INVALID {
+                                    // Likely a UWP app, try retrieving the icon from the app package
+                                    create_hicon_from_hwnd(&hwnd)
+                                } else {
+                                    icon
                                 }
                             } else {
                                 icon
@@ -1155,4 +1237,411 @@ fn show_help_message() {
         )
         .map_err(|e| eprintln!("TaskDialog failed: {e}"))
         .ok();
+}
+
+/// Attempts to retrieve the icon from a UWP app's window handle.
+/// If successful, creates an HICON from the icon file path using WIC.
+/// Returns HICON::NULL if any step fails.
+fn create_hicon_from_hwnd(hwnd: &w::HWND) -> w::HICON {
+    match get_uwp_icon_path_from_hwnd(hwnd) {
+        Ok(Some(path)) => match create_hicon_from_path(&path) {
+            Ok(icon) => icon,
+            Err(e) => {
+                eprintln!("create_hicon_from_path failed: {e}");
+                HICON::NULL
+            }
+        },
+        Ok(None) => HICON::NULL,
+        Err(e) => {
+            eprintln!("get_uwp_icon_path_from_hwnd failed: {e}");
+            HICON::NULL
+        }
+    }
+}
+
+/// Attempts to retrieve the path to a UWP app's icon from its window handle.
+/// Returns Ok(None) if the window does not belong to a packaged UWP app.
+/// Returns Err if any Win32 API call fails unexpectedly.
+fn get_uwp_icon_path_from_hwnd(hwnd: &w::HWND) -> Result<Option<PathBuf>, String> {
+    // Get the package full name from the process handle
+    let package_family_name = unsafe {
+        SHGetPropertyStoreForWindow::<IPropertyStore>(windows::Win32::Foundation::HWND(hwnd.ptr()))
+            .map_err(|e| format!("SHGetPropertyStoreForWindow failed with error: {e}"))?
+            .GetValue(&PKEY_AppUserModel_ID)
+            .map_err(|e| format!("GetValue failed with error: {e}"))?
+            .Anonymous
+            .Anonymous
+            .Anonymous
+            .pwszVal
+            .to_string()
+            .map_err(|e| format!("Failed to convert package full name to string: {e}"))?
+            .split("!")
+            .next()
+            .ok_or("Package full name is empty, cannot determine if UWP app")?
+            .to_string()
+    };
+
+    let package_full_name = get_package_full_name_from_family_name(&package_family_name)
+        .map_err(|e| format!("get_package_full_name_from_family_name failed: {e}"))?
+        .ok_or("Could not find package full name from family name")?;
+
+    // Get the package installation directory from the full name.
+    let package_path = get_package_path_by_full_name(&package_full_name)
+        .map_err(|e| format!("GetPackagePathByFullName failed with error code: {e}"))?;
+
+    // Construct path to the manifest and parse it.
+    let manifest_path = package_path.join("AppxManifest.xml");
+    let xml_content = match std::fs::read_to_string(manifest_path) {
+        Ok(content) => content,
+        Err(e) => {
+            return Err(format!(
+                "Failed to read AppxManifest.xml (likely a permissions issue): {e}"
+            ));
+        }
+    };
+
+    println!("UWP package path: {package_path:?}");
+
+    // Parse the manifest to find the icon's relative path.
+    let relative_icon_path = parse_manifest_for_icon_path(&xml_content)
+        .ok_or("Could not find a suitable icon in the manifest")?;
+    // Check if the file exists
+    // UWP apps often provide multiple icon sizes, so we look for the largest available if needed
+    let icon_path = package_path.join(&relative_icon_path);
+    if icon_path.exists() {
+        Ok(Some(icon_path))
+    } else {
+        // Try to find the icon with a suffix indicating a size, e.g. "icon.targetsize-256.png"
+        // Find all files that start with the relative icon path (without extension)
+        let icon_stem = Path::new(&relative_icon_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or("Failed to get icon file stem")?;
+        let icon_dir = package_path.join(
+            Path::new(&relative_icon_path)
+                .parent()
+                .ok_or("Failed to get icon file parent")?,
+        );
+        if icon_dir.is_dir() {
+            let mut candidates: Vec<PathBuf> = Vec::new();
+            for entry in std::fs::read_dir(icon_dir)
+                .map_err(|e| format!("Failed to read icon directory: {e}"))?
+            {
+                let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
+                let file_name = entry.file_name();
+                let file_name_str = file_name
+                    .to_str()
+                    .ok_or("Failed to convert file name to string")?;
+                // Check if the file name starts with the icon stem and has a valid image extension
+                if file_name_str.starts_with(icon_stem)
+                    && (file_name_str.ends_with(".png")
+                        || file_name_str.ends_with(".jpg")
+                        || file_name_str.ends_with(".ico"))
+                {
+                    candidates.push(entry.path());
+                }
+            }
+            // Filter the candidates by the following conditions:
+            // 1. Sort by shortest path length
+            // 2. Only include files that end with a number (indicating size) before the extension
+            // 3. Take the first one, and filter by it's name, excluding the size suffix
+            // 4. Find the file among the candidates with the largest size suffix
+            // Sort by shortest path length
+            candidates.sort_by_key(|p| p.as_os_str().len());
+            // Only include files that end with a number (indicating size) before the extension
+            candidates.retain(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.chars().next_back().is_some_and(|c| c.is_ascii_digit()))
+            });
+            // Take the first one, and filter by it's name, excluding the size suffix
+            if let Some(base_icon_name) = candidates
+                .first()
+                .and_then(|p| p.file_stem())
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.rsplit_once('.').map(|(name, _)| name))
+            {
+                // Find the file among the candidates with the largest size suffix
+                let mut largest_icon: Option<PathBuf> = None;
+                let mut largest_size: u32 = 0;
+                for candidate in candidates.iter().filter(|p| {
+                    p.file_stem()
+                        .and_then(|s| s.to_str())
+                        .is_some_and(|s| s.starts_with(base_icon_name))
+                }) {
+                    if let Some(size_str) =
+                        candidate
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .and_then(|s| {
+                                s.rsplit_once('-').map(|(_, size)| {
+                                    size.trim_start_matches("targetsize")
+                                        .trim_start_matches("scale")
+                                })
+                            })
+                    {
+                        if let Ok(size) = size_str.parse::<u32>() {
+                            if size > largest_size {
+                                largest_size = size;
+                                largest_icon = Some(candidate.clone());
+                            }
+                        }
+                    }
+                }
+                if let Some(largest_icon) = largest_icon {
+                    if largest_icon.exists() {
+                        return Ok(Some(largest_icon));
+                    }
+                }
+            }
+        }
+        Err("Icon file does not exist".to_string())
+    }
+}
+
+/// Creates an HICON from an image file path using WIC.
+fn create_hicon_from_path(path: &Path) -> w::AnyResult<w::HICON> {
+    /* 1. Create a WIC Imaging Factory. */
+    let factory: IWICImagingFactory =
+        unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)? };
+
+    /* 2. Create a decoder from the file path. */
+    let decoder: IWICBitmapDecoder = unsafe {
+        factory.CreateDecoderFromFilename(
+            PCWSTR(
+                path.as_os_str()
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect::<Vec<u16>>()
+                    .as_ptr(),
+            ),
+            None,
+            GENERIC_READ,
+            WICDecodeMetadataCacheOnLoad,
+        )?
+    };
+
+    /* 3. Get the first frame of the image. */
+    let frame: IWICBitmapFrameDecode = unsafe { decoder.GetFrame(0)? };
+
+    /* 4. Create a format converter to ensure the image is in 32bpp PBGRA format. */
+    let converter: IWICFormatConverter = unsafe { factory.CreateFormatConverter()? };
+    unsafe {
+        converter
+            .Initialize(
+                &frame,                         // Input source
+                &GUID_WICPixelFormat32bppBGRA, // Destination format
+                WICBitmapDitherTypeNone,
+                None, // No custom palette
+                0.0,  // Alpha threshold
+                WICBitmapPaletteTypeMedianCut,
+            )
+            .map_err(|e| format!("Failed to initialize WIC format converter: {e}"))?;
+    }
+
+    let mut width = 0;
+    let mut height = 0;
+    unsafe { converter.GetSize(&mut width, &mut height)? };
+    let stride = width * 4; // 4 bytes per pixel (B, G, R, A)
+    let mut buffer = vec![0u8; (stride * height) as usize];
+    unsafe { converter.CopyPixels(std::ptr::null(), stride, buffer.as_mut_slice()) }
+        .map_err(|e| format!("Failed to copy pixels from WIC converter: {e}"))?;
+
+    /* 5. Create a 32-bit HBITMAP using CreateDIBSection for the color part. */
+    let bitmap_info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width as i32,
+            biHeight: -(height as i32), // Negative height for a top-down DIB
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut bitmap_pixels: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hbmp_color = unsafe {
+        CreateDIBSection(
+            None,
+            &bitmap_info as *const _,
+            DIB_RGB_COLORS,
+            &mut bitmap_pixels,
+            None,
+            0,
+        )
+    }.map(|hbmp_color| unsafe {
+        w::guard::DeleteObjectGuard::new(w::HBITMAP::from_ptr(hbmp_color.0))
+    })?;
+
+    /* 6. Copy the WIC pixel data into the DIB section's memory. */
+    unsafe {
+        std::ptr::copy_nonoverlapping(buffer.as_ptr(), bitmap_pixels as *mut u8, buffer.len());
+    }
+
+    /* 7. Create a monochrome mask bitmap (all black is fine for 32bpp alpha icons). */
+    let hbmp_mask = w::HBITMAP::CreateBitmap(
+        w::SIZE::with(width as i32, height as i32),
+        1,
+        1,
+        vec![0u8; (width * height / 8) as usize].as_mut_ptr(),
+    )?;
+
+    /* 8. Create the icon using ICONINFO. */
+    let icon_info = ICONINFO {
+        fIcon: TRUE,
+        xHotspot: 0,
+        yHotspot: 0,
+        hbmMask: windows::Win32::Graphics::Gdi::HBITMAP(hbmp_mask.ptr()),
+        hbmColor: windows::Win32::Graphics::Gdi::HBITMAP(hbmp_color.ptr()),
+    };
+
+    let hicon = unsafe { CreateIconIndirect(&icon_info) }
+        .map_err(|e| format!("CreateIconIndirect failed with error: {e}"))?;
+
+    Ok(unsafe { HICON::from_ptr(hicon.0) })
+}
+
+/// Finds the first package full name for a given package family name.
+fn get_package_full_name_from_family_name(family_name: &str) -> Result<Option<String>, u32> {
+    let family_name_wide: Vec<u16> = family_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut count: u32 = 0;
+    let mut buffer_len: u32 = 0;
+    let package_types = PACKAGE_FILTER_HEAD;
+
+    // First, get the count and required buffer size.
+    let result = unsafe {
+        FindPackagesByPackageFamily(
+            PCWSTR(family_name_wide.as_ptr()),
+            package_types,
+            &mut count,
+            None,
+            &mut buffer_len,
+            None,
+            None,
+        )
+    };
+
+    if result.0 != ERROR_INSUFFICIENT_BUFFER.0 || count == 0 {
+        return Ok(None); // No packages found or another error occurred.
+    }
+
+    let mut full_names_buffer = vec![0u16; buffer_len as usize];
+    let mut full_names_ptrs: Vec<PWSTR> = vec![PWSTR::null(); count as usize];
+    let mut properties_buf: u32 = 0;
+
+    // Now, get the actual package full names.
+    let result = unsafe {
+        FindPackagesByPackageFamily(
+            PCWSTR(family_name_wide.as_ptr()),
+            package_types,
+            &mut count,
+            Some(full_names_ptrs.as_mut_ptr()),
+            &mut buffer_len,
+            Some(PWSTR(full_names_buffer.as_mut_ptr())),
+            Some(&mut properties_buf),
+        )
+    };
+
+    if result.is_err() {
+        return Err(result.0 as u32);
+    }
+
+    // We only need the first one.
+    if !full_names_ptrs.is_empty() && !full_names_ptrs[0].is_null() {
+        let name_str = unsafe { full_names_ptrs[0].to_string().unwrap_or_default() };
+        return Ok(Some(name_str));
+    }
+
+    Ok(None)
+}
+
+/// A wrapper for GetPackagePathByFullName to handle buffer sizing.
+fn get_package_path_by_full_name(package_full_name: &str) -> Result<PathBuf, u32> {
+    let mut buffer_len: u32 = 0;
+    let wide_name: Vec<u16> = package_full_name
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let result =
+        unsafe { GetPackagePathByFullName(PCWSTR(wide_name.as_ptr()), &mut buffer_len, None) };
+
+    if result.0 != ERROR_INSUFFICIENT_BUFFER.0 {
+        return Err(result.0 as u32);
+    }
+
+    let mut buffer = vec![0u16; buffer_len as usize];
+    let result = unsafe {
+        GetPackagePathByFullName(
+            PCWSTR(wide_name.as_ptr()),
+            &mut buffer_len,
+            Some(PWSTR(buffer.as_mut_ptr())),
+        )
+    };
+
+    if result.is_err() {
+        return Err(result.0 as u32);
+    }
+
+    Ok(PathBuf::from(String::from_utf16_lossy(
+        &buffer[..(buffer_len as usize - 1)],
+    )))
+}
+
+/// Parses XML content to find the logo path. Prefers 'Square44x44Logo'.
+fn parse_manifest_for_icon_path(xml_content: &str) -> Option<String> {
+    // Prefer the VisualElements logo if it exists
+    {
+        let start_tag = "<uap:VisualElements";
+        let end_tag = ">";
+        // Search for the <uap:VisualElements> tag
+        xml_content.find(start_tag).and_then(|start_idx| {
+            xml_content[start_idx..].find(end_tag).and_then(|end_idx| {
+                // Extract the tag content
+                let tag_content = &xml_content[start_idx..start_idx + end_idx + end_tag.len()];
+                // First try to find the Square44x44Logo attribute
+                tag_content.find("Square44x44Logo=\"").and_then(|logo_attr_start| {
+                    let logo_value_start = logo_attr_start + "Square44x44Logo=\"".len();
+                    tag_content[logo_value_start..].find('"').map(|logo_value_end| {
+                        tag_content[logo_value_start..logo_value_start + logo_value_end]
+                            .to_string()
+                    })
+                }).or_else(|| {
+                    // If not found, try to find the Logo attribute
+                    tag_content.find("Logo=\"").and_then(|logo_attr_start| {
+                        let logo_value_start = logo_attr_start + "Logo=\"".len();
+                        tag_content[logo_value_start..].find('"').map(|logo_value_end| {
+                            tag_content[logo_value_start..logo_value_start + logo_value_end]
+                                .to_string()
+                        })
+                    })
+                })
+            })
+        })
+    }
+    // If not found, fall back to the Application logo
+    .or({
+        let start_tag = "<uap:Application";
+        let end_tag = ">";
+        // Search for the <uap:Application> tag
+        xml_content.find(start_tag).and_then(|start_idx| {
+            xml_content[start_idx..].find(end_tag).and_then(|end_idx| {
+                // Extract the tag content
+                let tag_content = &xml_content[start_idx..start_idx + end_idx + end_tag.len()];
+                tag_content.find("Logo=\"").and_then(|logo_attr_start| {
+                    // Extract the logo attribute value, which contains the relative path to the icon
+                    let logo_value_start = logo_attr_start + "Logo=\"".len();
+                    tag_content[logo_value_start..].find('"').map(|logo_value_end| {
+                        tag_content[logo_value_start..logo_value_start + logo_value_end]
+                            .to_string()
+                    })
+                })
+            })
+        })
+    })
 }
