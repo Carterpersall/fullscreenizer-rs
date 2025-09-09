@@ -22,9 +22,9 @@ use windows::Win32::Storage::Packaging::Appx::{
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
-use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, GetWindowModuleFileNameW, ICONINFO};
+use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 use windows::core::{PCWSTR, PWSTR};
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
+
 use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::gui::dpi;
@@ -497,62 +497,7 @@ impl MyWindow {
                 };
                 if title.is_empty() || self.excluded_apps.contains(&title) {
                     return true;
-                } else {
-                    w::SetLastError(w::co::ERROR::SUCCESS);
-                    let path = hwnd.GetWindowModuleFileName();
-                    if path.is_empty() {
-                        // Some windows have no associated file path, such as UWP apps
-                        let pid = hwnd.GetWindowThreadProcessId();
-                        println!("Found window with title: '{title}' and no associated file path, PID: {pid:?}, GetLastError: '{}'", w::GetLastError());
-                    } else {
-                        // Print the file path of the window
-                        println!("Found window with title: '{title}' and Path '{path}'");
-                    }
                 }
-
-                // Check if the title is already in the list
-                // UWP apps can have multiple windows with the same title
-                // If the check passes, return the file path of the already added window and the current window
-                /* if self
-                    .process_list
-                    .items()
-                    .iter()
-                    .any(|item| item.text(0) == title)
-                {
-                    // Print the file path of the already added window
-                    let _ = self.process_list.items().iter().find_map(|item| {
-                        if item.text(0) == title {
-                            //let existing_index = item.index();
-                            // Get the HWND of the already added window
-                            let dup_hwnd = windows.get(item.index() as usize).map(|hwnd| {
-                                if hwnd.IsWindow() {
-                                    Some(hwnd)
-                                } else {
-                                    None
-                                }
-                            });
-                            if let Some(Some(dup_hwnd)) = dup_hwnd {
-                                // Get the file path of the already added window
-                                /* let pid = dup_hwnd.GetWindowThreadProcessId();
-                                unsafe {
-                                    OpenProcess(
-                                        PROCESS_ALL_ACCESS,
-                                        false,
-                                        pid.1,
-                                    ) */
-                                let result = dup_hwnd.GetWindowModuleFileName();
-                                println!(
-                                    "Skipped adding window '{}' with duplicate title. File path: '{result}', GetLastError: '{}'",
-                                    title,
-                                    w::GetLastError()
-                                );
-                            }
-                            Some(())
-                        } else {
-                            None
-                        }
-                    });
-                } */
 
                 let icon_id = if self.use_icons.load(Ordering::SeqCst) {
                     // Get the window icon
@@ -578,6 +523,30 @@ impl MyWindow {
                                 };
 
                                 if icon == HICON::NULL || icon == HICON::INVALID {
+                                    // Check if the title is already in the list
+                                    if let Some(existing_item) = self
+                                        .process_list
+                                        .items()
+                                        .iter()
+                                        .find(|item| item.text(0) == title)
+                                    {
+                                        // UWP apps can sometimes show up multiple times in the list
+                                        // This is due to one being the ApplicationFrameHost.exe that manages the UWP app container
+                                        // ApplicationFrameHost.exe seems to always be the first instance of the app in the list
+                                        // Remove the existing item from the list
+                                        unsafe {
+                                            self.process_list
+                                                .hwnd()
+                                                .SendMessage(w::msg::lvm::DeleteItem {
+                                                    index: existing_item.index(),
+                                                })
+                                        }
+                                        .map_err(|e| {
+                                            eprintln!("Failed to remove duplicate item from process list - DeleteItem failed: {e}");
+                                        })
+                                        .ok();
+                                    }
+
                                     // Likely a UWP app, try retrieving the icon from the app package
                                     create_hicon_from_hwnd(&hwnd)
                                 } else {
@@ -1471,6 +1440,7 @@ fn create_hicon_from_path(path: &Path) -> w::AnyResult<w::HICON> {
             None,
             0,
         )
+    // Wrap the HBITMAP in a DeleteObjectGuard to ensure it gets deleted
     }.map(|hbmp_color| unsafe {
         w::guard::DeleteObjectGuard::new(w::HBITMAP::from_ptr(hbmp_color.0))
     })?;
