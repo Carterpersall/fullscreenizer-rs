@@ -1398,7 +1398,7 @@ fn create_hicon_from_path(path: &Path) -> w::AnyResult<w::HICON> {
     unsafe {
         converter
             .Initialize(
-                &frame,                         // Input source
+                &frame,                        // Input source
                 &GUID_WICPixelFormat32bppBGRA, // Destination format
                 WICBitmapDitherTypeNone,
                 None, // No custom palette
@@ -1440,8 +1440,9 @@ fn create_hicon_from_path(path: &Path) -> w::AnyResult<w::HICON> {
             None,
             0,
         )
+    }
     // Wrap the HBITMAP in a DeleteObjectGuard to ensure it gets deleted
-    }.map(|hbmp_color| unsafe {
+    .map(|hbmp_color| unsafe {
         w::guard::DeleteObjectGuard::new(w::HBITMAP::from_ptr(hbmp_color.0))
     })?;
 
@@ -1575,22 +1576,29 @@ fn parse_manifest_for_icon_path(xml_content: &str) -> Option<String> {
                 // Extract the tag content
                 let tag_content = &xml_content[start_idx..start_idx + end_idx + end_tag.len()];
                 // First try to find the Square44x44Logo attribute
-                tag_content.find("Square44x44Logo=\"").and_then(|logo_attr_start| {
-                    let logo_value_start = logo_attr_start + "Square44x44Logo=\"".len();
-                    tag_content[logo_value_start..].find('"').map(|logo_value_end| {
-                        tag_content[logo_value_start..logo_value_start + logo_value_end]
-                            .to_string()
+                tag_content
+                    .find("Square44x44Logo=\"")
+                    .and_then(|logo_attr_start| {
+                        let logo_value_start = logo_attr_start + "Square44x44Logo=\"".len();
+                        tag_content[logo_value_start..]
+                            .find('"')
+                            .map(|logo_value_end| {
+                                tag_content[logo_value_start..logo_value_start + logo_value_end]
+                                    .to_string()
+                            })
                     })
-                }).or_else(|| {
-                    // If not found, try to find the Logo attribute
-                    tag_content.find("Logo=\"").and_then(|logo_attr_start| {
-                        let logo_value_start = logo_attr_start + "Logo=\"".len();
-                        tag_content[logo_value_start..].find('"').map(|logo_value_end| {
-                            tag_content[logo_value_start..logo_value_start + logo_value_end]
-                                .to_string()
+                    .or_else(|| {
+                        // If not found, try to find the Logo attribute
+                        tag_content.find("Logo=\"").and_then(|logo_attr_start| {
+                            let logo_value_start = logo_attr_start + "Logo=\"".len();
+                            tag_content[logo_value_start..]
+                                .find('"')
+                                .map(|logo_value_end| {
+                                    tag_content[logo_value_start..logo_value_start + logo_value_end]
+                                        .to_string()
+                                })
                         })
                     })
-                })
             })
         })
     }
@@ -1606,10 +1614,12 @@ fn parse_manifest_for_icon_path(xml_content: &str) -> Option<String> {
                 tag_content.find("Logo=\"").and_then(|logo_attr_start| {
                     // Extract the logo attribute value, which contains the relative path to the icon
                     let logo_value_start = logo_attr_start + "Logo=\"".len();
-                    tag_content[logo_value_start..].find('"').map(|logo_value_end| {
-                        tag_content[logo_value_start..logo_value_start + logo_value_end]
-                            .to_string()
-                    })
+                    tag_content[logo_value_start..]
+                        .find('"')
+                        .map(|logo_value_end| {
+                            tag_content[logo_value_start..logo_value_start + logo_value_end]
+                                .to_string()
+                        })
                 })
             })
         })
