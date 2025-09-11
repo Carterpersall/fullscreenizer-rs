@@ -1630,7 +1630,7 @@ fn parse_manifest_for_icon_path(xml_content: &str) -> Option<String> {
         })
     }
     // If not found, fall back to the Application logo
-    .or({
+    .or_else( || {
         let start_tag = "<uap:Application";
         let end_tag = ">";
         // Search for the <uap:Application> tag
