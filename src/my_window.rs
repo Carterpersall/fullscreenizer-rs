@@ -7,20 +7,17 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
-use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, GENERIC_READ, TRUE};
-use windows::Win32::Graphics::Gdi::{
-    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateDIBSection, DIB_RGB_COLORS,
-};
+use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, GENERIC_READ};
+use windows::Win32::Graphics::Gdi::{BITMAPINFO, CreateDIBSection, DIB_RGB_COLORS};
 use windows::Win32::Graphics::Imaging::{
-    CLSID_WICImagingFactory, GUID_WICPixelFormat32bppBGRA, IWICBitmapDecoder,
-    IWICBitmapFrameDecode, IWICFormatConverter, IWICImagingFactory, WICBitmapDitherTypeNone,
-    WICBitmapPaletteTypeMedianCut, WICDecodeMetadataCacheOnLoad,
+    GUID_WICPixelFormat32bppBGRA, IWICBitmapDecoder, IWICBitmapFrameDecode, IWICFormatConverter,
+    IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeMedianCut,
+    WICDecodeMetadataCacheOnLoad,
 };
 use windows::Win32::Storage::EnhancedStorage::PKEY_AppUserModel_ID;
 use windows::Win32::Storage::Packaging::Appx::{
     FindPackagesByPackageFamily, GetPackagePathByFullName, PACKAGE_FILTER_HEAD,
 };
-use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, SHGetPropertyStoreForWindow};
 use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 use windows::core::{PCWSTR, PWSTR};
@@ -1371,8 +1368,31 @@ fn get_uwp_icon_path_from_hwnd(hwnd: &w::HWND) -> Result<Option<PathBuf>, String
 /// Creates an HICON from an image file path using WIC.
 fn create_hicon_from_path(path: &Path) -> w::AnyResult<w::HICON> {
     /* 1. Create a WIC Imaging Factory. */
-    let factory: IWICImagingFactory =
-        unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)? };
+    let factory: IWICImagingFactory = w::CoCreateInstance(
+        //pub const CLSID_WICImagingFactory: windows_core::GUID = windows_core::GUID::from_u128(0xcacaf262_9370_4615_a13b_9f5539da4c0a);
+        // WinSafe does not currently define CLSID_WICImagingFactory, so we define it manually
+        &unsafe {
+            winsafe::co::CLSID::from_raw(&format!(
+                "{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+                0xcacaf262u32,
+                0x9370u16,
+                0x4615u16,
+                0xa1u8,
+                0x3bu8,
+                0x9fu8,
+                0x55u8,
+                0x39u8,
+                0xdau8,
+                0x4cu8,
+                0x0au8
+            ))
+        },
+        std::option::Option::<&w::IUnknown>::None,
+        w::co::CLSCTX::INPROC_SERVER,
+    )
+    // Transmute from IUnknown to IWICImagingFactory, as WinSafe does not currently have IWICImagingFactory defined
+    // Safety: The CLSID used in CoCreateInstance is for IWICImagingFactory, so the returned IUnknown should be safe to transmute
+    .map(|f| unsafe { std::mem::transmute::<w::IUnknown, IWICImagingFactory>(f) })?;
 
     /* 2. Create a decoder from the file path. */
     let decoder: IWICBitmapDecoder = unsafe {
@@ -1408,43 +1428,48 @@ fn create_hicon_from_path(path: &Path) -> w::AnyResult<w::HICON> {
             .map_err(|e| format!("Failed to initialize WIC format converter: {e}"))?;
     }
 
+    // Get the converted image dimensions
     let mut width = 0;
     let mut height = 0;
     unsafe { converter.GetSize(&mut width, &mut height)? };
-    let stride = width * 4; // 4 bytes per pixel (B, G, R, A)
+    // Stride is the number of bytes in between two vertically aligned pixels
+    // In this case, it's the width of the image times 4 bytes per pixel (B, G, R, A)
+    let stride = width * 4;
+    // Create a buffer to hold the converted pixel data
     let mut buffer = vec![0u8; (stride * height) as usize];
+    // Copy the pixels into the buffer
     unsafe { converter.CopyPixels(std::ptr::null(), stride, buffer.as_mut_slice()) }
         .map_err(|e| format!("Failed to copy pixels from WIC converter: {e}"))?;
 
     /* 5. Create a 32-bit HBITMAP using CreateDIBSection for the color part. */
-    let bitmap_info = BITMAPINFO {
-        bmiHeader: BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: width as i32,
-            biHeight: -(height as i32), // Negative height for a top-down DIB
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB.0,
+    // Construct a BITMAPINFO structure
+    let mut bitmap_info_header = w::BITMAPINFOHEADER::default();
+    bitmap_info_header.biWidth = width as i32;
+    bitmap_info_header.biHeight = -(height as i32);
+    bitmap_info_header.biPlanes = 1;
+    bitmap_info_header.biBitCount = 32;
+    bitmap_info_header.biCompression = w::co::BI::RGB;
+
+    let bitmap_info: BITMAPINFO = unsafe {
+        // Transmute w::BITMAPINFO to BITMAPINFO
+        // Safety: BITMAPINFO is a repr(C) struct with the same layout as w::BITMAPINFO
+        std::mem::transmute(w::BITMAPINFO {
+            bmiHeader: bitmap_info_header,
             ..Default::default()
-        },
-        ..Default::default()
+        })
     };
 
     let mut bitmap_pixels: *mut std::ffi::c_void = std::ptr::null_mut();
     let hbmp_color = unsafe {
         CreateDIBSection(
             None,
-            &bitmap_info as *const _,
+            &bitmap_info,
             DIB_RGB_COLORS,
             &mut bitmap_pixels,
             None,
             0,
         )
-    }
-    // Wrap the HBITMAP in a DeleteObjectGuard to ensure it gets deleted
-    .map(|hbmp_color| unsafe {
-        w::guard::DeleteObjectGuard::new(w::HBITMAP::from_ptr(hbmp_color.0))
-    })?;
+    }?;
 
     /* 6. Copy the WIC pixel data into the DIB section's memory. */
     unsafe {
@@ -1452,7 +1477,7 @@ fn create_hicon_from_path(path: &Path) -> w::AnyResult<w::HICON> {
     }
 
     /* 7. Create a monochrome mask bitmap (all black is fine for 32bpp alpha icons). */
-    let hbmp_mask = w::HBITMAP::CreateBitmap(
+    let mut hbmp_mask = w::HBITMAP::CreateBitmap(
         w::SIZE::with(width as i32, height as i32),
         1,
         1,
@@ -1460,16 +1485,18 @@ fn create_hicon_from_path(path: &Path) -> w::AnyResult<w::HICON> {
     )?;
 
     /* 8. Create the icon using ICONINFO. */
-    let icon_info = ICONINFO {
-        fIcon: TRUE,
-        xHotspot: 0,
-        yHotspot: 0,
-        hbmMask: windows::Win32::Graphics::Gdi::HBITMAP(hbmp_mask.ptr()),
-        hbmColor: windows::Win32::Graphics::Gdi::HBITMAP(hbmp_color.ptr()),
-    };
+    let mut icon_info = w::ICONINFO::default();
+    icon_info.set_fIcon(true);
+    icon_info.xHotspot = 0;
+    icon_info.yHotspot = 0;
+    icon_info.hbmMask = hbmp_mask.leak();
+    icon_info.hbmColor = unsafe { w::HBITMAP::from_ptr(hbmp_color.0) };
 
-    let hicon = unsafe { CreateIconIndirect(&icon_info) }
-        .map_err(|e| format!("CreateIconIndirect failed with error: {e}"))?;
+    let hicon =
+        // Create the icon using CreateIconIndirect
+        // Safety: ICONINFO is a repr(C) struct with the same layout as w::ICONINFO
+        unsafe { CreateIconIndirect(&std::mem::transmute::<w::ICONINFO, ICONINFO>(icon_info)) }
+            .map_err(|e| format!("CreateIconIndirect failed with error: {e}"))?;
 
     Ok(unsafe { HICON::from_ptr(hicon.0) })
 }
