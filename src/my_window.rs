@@ -639,15 +639,6 @@ impl MyWindow {
                     eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
                 }).ok();
 
-                // Hide the process list's horizontal scrollbar
-                // The scrollbar would otherwise appear since the process list's column is wider than the listview
-                self2.process_list.hwnd().ShowScrollBar(
-                    co::SBB::HORZ,
-                    false
-                ).map_err(|e| {
-                    eprintln!("Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}");
-                }).ok();
-
                 Ok(())
             }
         });
@@ -780,19 +771,6 @@ impl MyWindow {
                     .set_width((new_size.right - new_size.left) - (16 * app_dpi / 120) as i32)
                     .map_err(|e| {
                         eprintln!("Failed to resize process list column - SetWidth Failed: {e}")
-                    })
-                    .ok();
-
-                // Hide the process list's horizontal scrollbar
-                // The scrollbar would otherwise appear since the process list's column is wider than the listview
-                self2
-                    .process_list
-                    .hwnd()
-                    .ShowScrollBar(co::SBB::HORZ, false)
-                    .map_err(|e| {
-                        eprintln!(
-                            "Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}"
-                        );
                     })
                     .ok();
 
@@ -975,6 +953,25 @@ impl MyWindow {
                 unsafe { self2.wnd.hwnd().DefWindowProc(erase_bkgnd) };
 
                 Ok(0)
+            }
+        });
+
+        self.process_list.on_subclass().wm_nc_calc_size({
+            let self2 = self.clone();
+            move |calc_size| {
+                // Hide the process list's horizontal scrollbar
+                // The scrollbar would otherwise appear since the process list's column is wider than the listview
+                // Performing this in the WM_NCCALCSIZE handler prevents the scrollbar from flickering
+                self2
+                    .process_list
+                    .hwnd()
+                    .ShowScrollBar(co::SBB::HORZ, false)
+                    .map_err(|e| {
+                        eprintln!("Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}");
+                    })
+                    .ok();
+
+                Ok(unsafe { self2.process_list.hwnd().DefWindowProc(calc_size) })
             }
         });
 
