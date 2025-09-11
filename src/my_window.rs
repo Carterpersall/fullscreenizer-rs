@@ -444,7 +444,7 @@ impl MyWindow {
 
         // Create an image list to store the icons
         let image_list = HIMAGELIST::Create(
-            SIZE::with(16 * dpi / 120, 16 * dpi / 120),
+            SIZE::with(20 * dpi / 120, 20 * dpi / 120),
             co::ILC::COLOR32,
             0,
             100,
@@ -953,6 +953,28 @@ impl MyWindow {
                 unsafe { self2.wnd.hwnd().DefWindowProc(erase_bkgnd) };
 
                 Ok(0)
+            }
+        });
+
+        self.process_list.on_subclass().wm_kill_focus({
+            let self2 = self.clone();
+            move |hwnd| {
+                unsafe { self2.process_list.hwnd().DefSubclassProc(hwnd) };
+                // For some reason, the selected listviewitem's icon is not redrawn when the window loses focus
+                // This is causes the icon's background to remain the focused selection's blue color
+                // Forcing a redraw of the selected listviewitem fixes this
+                if self2.process_list.hwnd().IsWindowVisible() {
+                    self2
+                        .process_list
+                        .hwnd()
+                        .InvalidateRect(None, true)
+                        .map_err(|e| {
+                            eprintln!("Failed to trigger a paint of the process list - InvalidateRect Failed: {e}")
+                        })
+                        .ok();
+                }
+
+                Ok(())
             }
         });
 
