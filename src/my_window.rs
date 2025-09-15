@@ -21,7 +21,8 @@ pub struct MyWindow {
     wnd: gui::WindowMain,
     label: gui::Label,
     process_list: gui::ListView,
-    top_toggle: gui::ListView,
+    top_toggle: gui::CheckBox,
+    top_label: gui::Label,
     btn_canvas: gui::Label,
     refresh_btn: gui::Button,
     help_btn: gui::Button,
@@ -91,31 +92,34 @@ impl MyWindow {
             },
         );
 
-        let top_toggle = gui::ListView::new(
+        // Checkbox to toggle the "stay on top" flag
+        let top_toggle = gui::CheckBox::new(
             &wnd,
-            gui::ListViewOpts {
-                position: dpi(2, 342),
-                size: dpi(300, 20),
-                columns: vec![("".to_owned(), 999)],
-                control_style: co::LVS::NOSORTHEADER
-                    | co::LVS::SHOWSELALWAYS
-                    | co::LVS::NOCOLUMNHEADER
-                    | co::LVS::NOLABELWRAP
-                    | co::LVS::SINGLESEL
-                    | co::LVS::REPORT
-                    | co::LVS::NOSCROLL
-                    | co::LVS::SHAREIMAGELISTS,
-                control_ex_style: co::LVS_EX::DOUBLEBUFFER
-                    | co::LVS_EX::BORDERSELECT
-                    | co::LVS_EX::AUTOSIZECOLUMNS
-                    | co::LVS_EX::CHECKBOXES,
+            gui::CheckBoxOpts {
+                position: dpi(8, 342),
+                size: dpi(20, 20),
                 window_style: co::WS::CHILD
                     | co::WS::VISIBLE
                     | co::WS::TABSTOP
                     | co::WS::GROUP
                     | co::WS::CLIPSIBLINGS,
-                // Resize horizontally and vertically together with parent window.
-                resize_behavior: (gui::Horz::Resize, gui::Vert::Repos),
+                check_state: co::BST::UNCHECKED,
+                ..Default::default()
+            },
+        );
+
+        // Label for the top_toggle checkbox
+        // While setting the text of the checkbox can be done, the resulting text's color cannot be changed
+        // Therefore, a label is used instead
+        let top_label = gui::Label::new(
+            &wnd,
+            gui::LabelOpts {
+                text: "Apply \"stay on top\" flag to avoid taskbar flickering".to_owned(),
+                position: dpi(32, 342),
+                size: dpi(338, 20),
+                control_style: co::SS::LEFTNOWORDWRAP | co::SS::NOTIFY,
+                window_style: co::WS::CHILD | co::WS::VISIBLE,
+                window_ex_style: co::WS_EX::TOPMOST,
                 ..Default::default()
             },
         );
@@ -193,6 +197,7 @@ impl MyWindow {
             label,
             process_list,
             top_toggle,
+            top_label,
             btn_canvas,
             refresh_btn,
             help_btn,
@@ -258,6 +263,10 @@ impl MyWindow {
                             hfont: font.raw_copy(),
                             redraw: true,
                         });
+                        self.top_label.hwnd().SendMessage(w::msg::wm::SetFont {
+                            hfont: font.raw_copy(),
+                            redraw: true,
+                        });
                         self.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
                             hfont: font.raw_copy(),
                             redraw: true,
@@ -280,10 +289,8 @@ impl MyWindow {
     }
 
     fn enable_dark_mode(&self) {
-        // Get a handle to the window
+        // Get a handle to the window and process list
         let wnd = self.wnd.hwnd();
-
-        // Get a handle to the process list
         let process_list = self.process_list.hwnd();
 
         // Enable dark mode on the window
@@ -298,6 +305,11 @@ impl MyWindow {
         process_list
             .SetWindowTheme("DarkMode_Explorer", None)
             .map_err(|e| eprintln!("SetWindowTheme on process list failed: {e}"))
+            .ok();
+        self.top_toggle
+            .hwnd()
+            .SetWindowTheme("DarkMode_Explorer", None)
+            .map_err(|e| eprintln!("SetWindowTheme on top toggle failed: {e}"))
             .ok();
         self.refresh_btn
             .hwnd()
@@ -341,36 +353,6 @@ impl MyWindow {
         }
         .map_err(|e| eprintln!("SetTextColor failed: {e}"))
         .ok();
-
-        // Get the handle of the top toggle
-        let top_toggle = self.top_toggle.hwnd();
-
-        // Set the background color of the checkbox listview to the same as the window background
-        unsafe {
-            top_toggle.SendMessage(SetBkColor {
-                color: Option::from(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)),
-            })
-        }
-        .map_err(|e| eprintln!("SetBkColor failed: {e}"))
-        .ok();
-
-        // Set the background color of the element in the checkbox listview
-        unsafe {
-            top_toggle.SendMessage(SetTextBkColor {
-                color: Option::from(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)),
-            })
-        }
-        .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
-        .ok();
-
-        // Set the text color of the elements in the checkbox listview
-        unsafe {
-            top_toggle.SendMessage(SetTextColor {
-                color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
-            })
-        }
-        .map_err(|e| eprintln!("SetTextColor failed: {e}"))
-        .ok();
     }
 
     fn set_system_theme(&self) {
@@ -407,24 +389,6 @@ impl MyWindow {
             // Enable dark mode on the window
             self.enable_dark_mode();
         } else {
-            // Set the background color of the checkbox listview to the same as the window background
-            unsafe {
-                self.top_toggle.hwnd().SendMessage(SetBkColor {
-                    color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
-                })
-            }
-            .map_err(|e| eprintln!("SetBkColor failed: {e}"))
-            .ok();
-
-            // Set the background color of the element in the checkbox listview
-            unsafe {
-                self.top_toggle.hwnd().SendMessage(SetTextBkColor {
-                    color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
-                })
-            }
-            .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
-            .ok();
-
             // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
             self.process_list
                 .hwnd()
@@ -615,13 +579,6 @@ impl MyWindow {
                 // Stop the timer
                 self2.wnd.hwnd().KillTimer(1).ok();
 
-                // Add text to the checkbox listview
-                self2.top_toggle.items().add(
-                    &["Apply \"stay on top\" flag to avoid taskbar flickering"],
-                    None,
-                    (),
-                )?;
-
                 // Set the canvas as the button's parent
                 self2.refresh_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
                 self2.help_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
@@ -774,26 +731,42 @@ impl MyWindow {
                     })
                     .ok();
 
-                // Resize and move the checkbox listview
+                // Resize and move the checkbox
                 self2
                     .top_toggle
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with(
-                            (2 * app_dpi / 120) as i32,
-                            (29 * app_dpi / 120) as i32
+                            (8 * app_dpi / 120) as i32,
+                            (31 * app_dpi / 120) as i32
                                 + ((new_size.bottom - new_size.top)
                                     - ((29 + 20 + 20 + 33) * app_dpi / 120) as i32),
                         ),
-                        SIZE::with(
-                            (new_size.right - new_size.left) - (4 * app_dpi / 120) as i32,
-                            (25 * app_dpi / 120) as i32,
+                        SIZE::with((20 * app_dpi / 120) as i32, (20 * app_dpi / 120) as i32),
+                        SWP::NOZORDER,
+                    )
+                    .map_err(|e| eprintln!("Failed to resize checkbox - SetWindowPos Failed: {e}"))
+                    .ok();
+
+                // Resize and move the label for the checkbox
+                self2
+                    .top_label
+                    .hwnd()
+                    .SetWindowPos(
+                        HwndPlace::None,
+                        POINT::with(
+                            // Leave a small gap between the checkbox and the label for the selection box
+                            ((8 + 22) * app_dpi / 120) as i32,
+                            (31 * app_dpi / 120) as i32
+                                + ((new_size.bottom - new_size.top)
+                                    - ((29 + 20 + 20 + 33) * app_dpi / 120) as i32),
                         ),
+                        SIZE::with((338 * app_dpi / 120) as i32, (20 * app_dpi / 120) as i32),
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
-                        eprintln!("Failed to resize checkbox listview - SetWindowPos Failed: {e}")
+                        eprintln!("Failed to resize label for checkbox - SetWindowPos Failed: {e}")
                     })
                     .ok();
 
@@ -989,7 +962,9 @@ impl MyWindow {
                     .hwnd()
                     .ShowScrollBar(co::SBB::HORZ, false)
                     .map_err(|e| {
-                        eprintln!("Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}");
+                        eprintln!(
+                            "Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}"
+                        );
                     })
                     .ok();
 
@@ -997,17 +972,82 @@ impl MyWindow {
             }
         });
 
-        self.top_toggle.on().nm_click({
+        self.top_toggle.on_subclass().wm_set_focus({
             let self2 = self.clone();
             move |_| {
-                // Disable highlighting the item by clicking on it (Selecting with the arrow keys still works)
+                // Get the rectangle of the checkbox label relative to the window's client area
+                let ctrl_rect = match self2.top_label.hwnd().GetWindowRect() {
+                    Ok(rect) => match self2
+                        .wnd
+                        .hwnd()
+                        .ScreenToClient(POINT::with(rect.left, rect.top))
+                    {
+                        // Expand the rectangle slightly to make it more visible
+                        Ok(pt) => RECT {
+                            left: pt.x - 2,
+                            top: pt.y - 1,
+                            right: pt.x + (rect.right - rect.left) + 1,
+                            bottom: pt.y + (rect.bottom - rect.top) + 1,
+                        },
+                        Err(e) => {
+                            eprintln!("ScreenToClient failed: {e}");
+                            return Ok(());
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("GetWindowRect failed: {e}");
+                        return Ok(());
+                    }
+                };
+
+                // Draw a focus rectangle around the checkbox label
+                // The focus rectangle does not draw over controls, so space is left between the checkbox and the label
                 self2
-                    .top_toggle
-                    .items()
-                    .get(0)
-                    .select(false)
-                    .map_err(|e| eprintln!("Failed to deselect the top toggle item: {e}"))
+                    .wnd
+                    .hwnd()
+                    .GetDC()
+                    .unwrap()
+                    .DrawFocusRect(ctrl_rect)
+                    .map_err(|e| eprintln!("DrawFocusRect failed: {e}"))
                     .ok();
+
+                Ok(())
+            }
+        });
+
+        self.top_toggle.on_subclass().wm_kill_focus({
+            let self2 = self.clone();
+            move |hwnd| {
+                unsafe { self2.wnd.hwnd().DefSubclassProc(hwnd) };
+                // Clear any existing focus rectangle by redrawing the window region
+                self2
+                    .wnd
+                    .hwnd()
+                    .InvalidateRect(None, true)
+                    .map_err(|e| eprintln!("InvalidateRect failed: {e}"))
+                    .ok();
+
+                Ok(())
+            }
+        });
+
+        // Toggle the checkbox state when the label is clicked
+        self.top_label.on().stn_clicked({
+            let self2 = self.clone();
+            move || {
+                // Toggle the checkbox state
+                self2.top_toggle.trigger_click();
+
+                Ok(())
+            }
+        });
+
+        // Double-clicking the label fires a separate event, so handle that too
+        self.top_label.on().stn_dbl_clk({
+            let self2 = self.clone();
+            move || {
+                // Toggle the checkbox state
+                self2.top_toggle.trigger_click();
 
                 Ok(())
             }
@@ -1105,16 +1145,7 @@ impl MyWindow {
                 }
 
                 // Set window to stay on top if checkbox is checked
-                if unsafe {
-                    self2.top_toggle.hwnd().SendMessage(
-                        w::msg::lvm::GetItemState {
-                            index: 0,
-                            mask: co::LVIS::STATEIMAGEMASK
-                        }
-                    )
-                }
-                // 0x1000 = Unchecked, 0x2000 = Checked
-                .raw() & 0x2000 != 0 {
+                if self2.top_toggle.is_checked() {
                     window.set_style_ex(window.style_ex() | co::WS_EX::TOPMOST);
                 }
 
