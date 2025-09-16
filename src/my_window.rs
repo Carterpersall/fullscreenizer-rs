@@ -36,7 +36,7 @@ pub struct MyWindow {
     // Shared resources
     app_font: Rc<RwLock<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
     app_dpi: Arc<AtomicU32>,
-    label_hbrush: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HBRUSH>>>>,
+    background_hbrush: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HBRUSH>>>>,
     imagelist: Arc<Mutex<Option<w::guard::ImageListDestroyGuard>>>,
     window_icons: Arc<Mutex<Vec<w::guard::DestroyIconGuard>>>,
 }
@@ -188,8 +188,8 @@ impl MyWindow {
         // The current DPI of the window
         // This is used to scale the window elements based on a 125% (120 DPI) display
         let app_dpi = Arc::new(AtomicU32::new(120));
-        // Stores the brush used to paint the background of the labels
-        let label_hbrush = Arc::new(Mutex::new(None));
+        // Stores the brush used to paint the background of the labels and window
+        let background_hbrush = Arc::new(Mutex::new(None));
         // The image list for the window icons
         let imagelist = Arc::new(Mutex::new(None));
         // A vector to store the icons of the windows
@@ -210,7 +210,7 @@ impl MyWindow {
             excluded_apps,
             app_font,
             app_dpi,
-            label_hbrush,
+            background_hbrush,
             imagelist,
             window_icons,
         };
@@ -873,28 +873,28 @@ impl MyWindow {
                     .map_err(|e| eprintln!("SetBkColor on the label failed: {e}"));
 
                 // Set the background color of the label by returning a handle to a brush
-                Ok(match self2.label_hbrush.lock() {
-                    Ok(mut label_hbrush) => {
+                Ok(match self2.background_hbrush.lock() {
+                    Ok(mut background_hbrush) => {
                         // Create the brush if it does not exist
-                        if label_hbrush.is_none() {
+                        if background_hbrush.is_none() {
                             HBRUSH::CreateSolidBrush(color).map_or_else(
                                 |e| {
                                     eprintln!("CreateSolidBrush failed: {e}");
                                 },
                                 |hbrush| {
                                     // Set the brush in the Arc Mutex
-                                    *label_hbrush = Some(hbrush);
+                                    *background_hbrush = Some(hbrush);
                                 },
                             )
                         }
 
                         // Return a handle to the brush, if it exists
-                        label_hbrush
+                        background_hbrush
                             .as_ref()
                             .map_or_else(|| HBRUSH::NULL, |hbrush| unsafe { hbrush.raw_copy() })
-                    },
+                    }
                     Err(e) => {
-                        eprintln!("Failed to lock label brush mutex: {e}");
+                        eprintln!("Failed to lock background brush mutex: {e}");
                         HBRUSH::NULL
                     }
                 })
@@ -906,32 +906,49 @@ impl MyWindow {
             move |erase_bkgnd| -> w::AnyResult<i32> {
                 // Set the background color of the window in dark mode
                 if self2.is_dark_mode.load(Ordering::Relaxed) {
-                    // Create a solid brush with the dark mode background color
-                    match HBRUSH::CreateSolidBrush(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)) {
-                        Ok(hbrush) => {
-                            match self2.wnd.hwnd().GetClientRect() {
-                                Ok(rect) => {
-                                    // Set the background color of the window
-                                    erase_bkgnd
-                                        .hdc
-                                        .FillRect(rect, &hbrush)
-                                        .map_err(|e| eprintln!("FillRect failed: {e}"))
-                                        .ok();
+                    match self2.background_hbrush.lock() {
+                        Ok(mut background_hbrush) => {
+                            // Create the brush if it does not exist
+                            if background_hbrush.is_none() {
+                                HBRUSH::CreateSolidBrush(COLORREF::from_rgb(0x1E, 0x1E, 0x1E))
+                                    .map_or_else(
+                                        |e| {
+                                            eprintln!("CreateSolidBrush failed: {e}");
+                                        },
+                                        |hbrush| {
+                                            // Set the brush in the Arc Mutex
+                                            *background_hbrush = Some(hbrush);
+                                        },
+                                    )
+                            }
 
-                                    return Ok(1);
-                                }
-                                Err(e) => {
-                                    eprintln!("GetClientRect failed: {e}");
+                            // If the brush exists, use it to paint the window background
+                            if let Some(hbrush) = background_hbrush.as_ref() {
+                                match self2.wnd.hwnd().GetClientRect() {
+                                    Ok(rect) => {
+                                        // Set the background color of the window
+                                        erase_bkgnd
+                                            .hdc
+                                            .FillRect(rect, hbrush)
+                                            .map_err(|e| eprintln!("FillRect failed: {e}"))
+                                            .ok();
+
+                                        return Ok(1);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("GetClientRect failed: {e}");
+                                    }
                                 }
                             }
                         }
                         Err(e) => {
-                            eprintln!("CreateSolidBrush failed: {e}");
+                            eprintln!("Failed to lock background brush mutex: {e}");
                         }
                     }
                 }
 
-                // Call the default window procedure
+                // If not in dark mode, or if an error occurred, call the default window procedure
+                // This will paint the window background with the default system color
                 unsafe { self2.wnd.hwnd().DefWindowProc(erase_bkgnd) };
 
                 Ok(0)
