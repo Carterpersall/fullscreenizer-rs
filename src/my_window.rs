@@ -36,6 +36,7 @@ pub struct MyWindow {
     // Shared resources
     app_font: Rc<RwLock<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
     app_dpi: Arc<AtomicU32>,
+    label_hbrush: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HBRUSH>>>>,
     imagelist: Arc<Mutex<Option<w::guard::ImageListDestroyGuard>>>,
     window_icons: Arc<Mutex<Vec<w::guard::DestroyIconGuard>>>,
 }
@@ -187,6 +188,8 @@ impl MyWindow {
         // The current DPI of the window
         // This is used to scale the window elements based on a 125% (120 DPI) display
         let app_dpi = Arc::new(AtomicU32::new(120));
+        // Stores the brush used to paint the background of the labels
+        let label_hbrush = Arc::new(Mutex::new(None));
         // The image list for the window icons
         let imagelist = Arc::new(Mutex::new(None));
         // A vector to store the icons of the windows
@@ -207,6 +210,7 @@ impl MyWindow {
             excluded_apps,
             app_font,
             app_dpi,
+            label_hbrush,
             imagelist,
             window_icons,
         };
@@ -845,8 +849,6 @@ impl MyWindow {
             }
         });
 
-        // Stores the brush used to paint the label's background
-        let label_hbrush: Arc<Mutex<HBRUSH>> = Arc::new(Mutex::new(HBRUSH::NULL));
         self.wnd.on().wm_ctl_color_static({
             let self2 = self.clone();
             move |ctl| {
@@ -870,25 +872,32 @@ impl MyWindow {
                     .SetBkColor(color)
                     .map_err(|e| eprintln!("SetBkColor on the label failed: {e}"));
 
-                // If the brush in the Arc Mutex is NULL, create a new solid brush
-                if let Ok(mut label_hbrush) = label_hbrush.lock() {
-                    if *label_hbrush == HBRUSH::NULL {
-                        HBRUSH::CreateSolidBrush(color).map_or_else(
-                            |e| {
-                                eprintln!("CreateSolidBrush failed: {e}");
-                            },
-                            |mut hbrush| {
-                                // Set the brush in the Arc Mutex
-                                *label_hbrush = hbrush.leak();
-                            },
-                        );
-                    }
-                }
+                // Set the background color of the label by returning a handle to a brush
+                Ok(match self2.label_hbrush.lock() {
+                    Ok(mut label_hbrush) => {
+                        // Create the brush if it does not exist
+                        if label_hbrush.is_none() {
+                            HBRUSH::CreateSolidBrush(color).map_or_else(
+                                |e| {
+                                    eprintln!("CreateSolidBrush failed: {e}");
+                                },
+                                |hbrush| {
+                                    // Set the brush in the Arc Mutex
+                                    *label_hbrush = Some(hbrush);
+                                },
+                            )
+                        }
 
-                // Set the background color of the label
-                Ok(label_hbrush
-                    .lock()
-                    .map_or(HBRUSH::NULL, |hbrush| unsafe { hbrush.raw_copy() }))
+                        // Return a handle to the brush, if it exists
+                        label_hbrush
+                            .as_ref()
+                            .map_or_else(|| HBRUSH::NULL, |hbrush| unsafe { hbrush.raw_copy() })
+                    },
+                    Err(e) => {
+                        eprintln!("Failed to lock label brush mutex: {e}");
+                        HBRUSH::NULL
+                    }
+                })
             }
         });
 
