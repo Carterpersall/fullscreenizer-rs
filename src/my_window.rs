@@ -11,7 +11,7 @@ use winsafe::gui::dpi;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::prelude::{GuiParent, GuiWindow, Handle};
 use winsafe::{
-    self as w, AdjustWindowRectEx, COLORREF, DwmAttr, EnumWindows, HBRUSH, HICON, HIMAGELIST,
+    self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HICON, HIMAGELIST,
     HwndPlace, POINT, RECT, SIZE, co, gui,
 };
 
@@ -1162,7 +1162,7 @@ impl MyWindow {
                 window.set_style(co::WS::POPUP | co::WS::VISIBLE);
 
                 // Set the window size
-                match AdjustWindowRectEx(rect, window.style(), false, window.style_ex()) {
+                match AdjustWindowRectExForDpi(rect, window.style(), false, window.style_ex(), window.GetDpiForWindow()) {
                     Ok(rct) => rect = rct,
                     Err(e) => {
                         show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectEx failed with error: {e}"));
