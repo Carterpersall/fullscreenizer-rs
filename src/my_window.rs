@@ -605,8 +605,21 @@ impl MyWindow {
                 // Refresh the process list
                 self2.refresh_btn.trigger_click();
 
-                // Start an one-shot timer for some post-creation tasks
-                self2.wnd.hwnd().SetTimer(1, 1, None).ok();
+                // Send a message to handle post-creation tasks
+                unsafe {
+                    self2
+                        .wnd
+                        .hwnd()
+                        .PostMessage(w::msg::WndMsg::new(
+                            co::WM::APP,
+                            co::WM::USER.raw() as usize,
+                            0,
+                        ))
+                        .map_err(|e| {
+                            eprintln!("Failed to post WM_APP message - PostMessage Failed: {e}");
+                        })
+                        .ok();
+                };
 
                 // Call the default window procedure
                 unsafe { self2.wnd.hwnd().DefWindowProc(create) };
@@ -616,30 +629,29 @@ impl MyWindow {
         });
 
         // Handle post-creation tasks
-        self.wnd.on().wm_timer(1, {
+        self.wnd.on().wm(co::WM::APP,{
             let self2 = self.clone();
-            move || {
-                // Stop the timer
-                self2.wnd.hwnd().KillTimer(1).ok();
+            move |msg| {
+                if msg.wparam == co::WM::USER.raw() as usize {
+                    // Set the canvas as the button's parent
+                    self2.refresh_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
+                    self2.help_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
+                    self2.fullscreenize_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
 
-                // Set the canvas as the button's parent
-                self2.refresh_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
-                self2.help_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
-                self2.fullscreenize_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
+                    // Force the buttons to repaint
+                    // Without this, the buttons are not visible until they are updated by hovering over them
+                    self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}")
+                    }).ok();
+                    self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}")
+                    }).ok();
+                    self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
+                    }).ok();
+                }
 
-                // Force the buttons to repaint
-                // Without this, the buttons are not visible until they are updated by hovering over them
-                self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                    eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}")
-                }).ok();
-                self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                    eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}")
-                }).ok();
-                self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                    eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
-                }).ok();
-
-                Ok(())
+                Ok(0)
             }
         });
 
