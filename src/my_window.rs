@@ -73,7 +73,8 @@ impl MyWindow {
             gui::ListViewOpts {
                 position: dpi(8, 29),
                 size: dpi(289, 307),
-                columns: vec![("".to_owned(), 999)],
+                // Make the single column very wide, so that the end of the column is never visible
+                columns: vec![("".to_owned(), 32000)],
                 control_style: co::LVS::NOSORTHEADER
                     | co::LVS::SHOWSELALWAYS
                     | co::LVS::NOCOLUMNHEADER
@@ -545,6 +546,44 @@ impl MyWindow {
         Ok(())
     }
 
+    fn toggle_label_focus_rectangle(&self) -> Result<(), String> {
+        // Get the rectangle of the checkbox label relative to the window's client area
+        let ctrl_rect = match self.top_label.hwnd().GetWindowRect() {
+            Ok(rect) => match self
+                .wnd
+                .hwnd()
+                .ScreenToClient(POINT::with(rect.left, rect.top))
+            {
+                // Expand the rectangle slightly to make it more visible
+                Ok(pt) => RECT {
+                    left: pt.x - 2,
+                    top: pt.y - 1,
+                    right: pt.x + (rect.right - rect.left) + 1,
+                    bottom: pt.y + (rect.bottom - rect.top) + 1,
+                },
+                Err(e) => {
+                    eprintln!("ScreenToClient failed: {e}");
+                    return Err(format!("ScreenToClient failed: {e}").to_owned());
+                }
+            },
+            Err(e) => {
+                eprintln!("GetWindowRect failed: {e}");
+                return Err(format!("GetWindowRect failed: {e}").to_owned());
+            }
+        };
+
+        // Draw a focus rectangle around the checkbox label
+        // The focus rectangle does not draw over controls, so space is left between the checkbox and the label
+        self.wnd
+            .hwnd()
+            .GetDC()
+            .unwrap()
+            .DrawFocusRect(ctrl_rect)
+            .map_err(|e| format!("DrawFocusRect failed: {e}"))?;
+
+        Ok(())
+    }
+
     fn events(&self) {
         // Create a vector in a mutex to store the open windows
         let windows: Arc<Mutex<Vec<w::HWND>>> = Arc::new(Mutex::new(Vec::new()));
@@ -677,6 +716,18 @@ impl MyWindow {
                 // Get the current dpi of the window
                 let app_dpi = self2.app_dpi.load(Ordering::Relaxed);
 
+                let top_label_focused = w::HWND::GetFocus().map_or_else(|| false, |hwnd| {
+                    &hwnd == self2.top_toggle.hwnd()
+                });
+
+                if top_label_focused {
+                    // If the checkbox label has focus, draw the focus rectangle again
+                    // The focus rectangle is drawn using XOR, so drawing it again will erase the previous one
+                    self2.toggle_label_focus_rectangle().map_err(|e| {
+                        eprintln!("Failed to erase stay on to toggle's label focus rectangle: {e}");
+                    }).ok();
+                }
+
                 // Get the new window dimensions
                 let new_size = RECT {
                     left: 0,
@@ -723,18 +774,6 @@ impl MyWindow {
                     })
                     .ok();
 
-                // Resize the only column in the process list to be slightly wider than the listview
-                // This prevents a vertical line indicating the end of the column from being visible
-                self2
-                    .process_list
-                    .cols()
-                    .get(0)
-                    .set_width((new_size.right - new_size.left) - (16 * app_dpi / 120) as i32)
-                    .map_err(|e| {
-                        eprintln!("Failed to resize process list column - SetWidth Failed: {e}")
-                    })
-                    .ok();
-
                 // Resize and move the checkbox
                 self2
                     .top_toggle
@@ -767,7 +806,8 @@ impl MyWindow {
                                     - ((29 + 20 + 20 + 33) * app_dpi / 120) as i32),
                         ),
                         SIZE::with((338 * app_dpi / 120) as i32, (20 * app_dpi / 120) as i32),
-                        SWP::NOZORDER,
+                        // Don't use the SWP::NOZORDER flag, otherwise the previous frame of the listview may be visible
+                        SWP::default(),
                     )
                     .map_err(|e| {
                         eprintln!("Failed to resize label for checkbox - SetWindowPos Failed: {e}")
@@ -844,6 +884,14 @@ impl MyWindow {
                         eprintln!("Failed to move fullscreenize button - SetWindowPos Failed: {e}")
                     })
                     .ok();
+
+                // Check if the checkbox has focus
+                if let Some(hwnd) = w::HWND::GetFocus() && &hwnd == self2.top_toggle.hwnd() {
+                    // Redraw the focus rectangle around the checkbox at its new position
+                    self2.toggle_label_focus_rectangle().map_err(|e| {
+                        eprintln!("Failed to draw focus rectangle around stay on top toggle's label: {e}");
+                    }).ok();
+                }
 
                 Ok(())
             }
@@ -1001,40 +1049,12 @@ impl MyWindow {
         self.top_toggle.on_subclass().wm_set_focus({
             let self2 = self.clone();
             move |_| {
-                // Get the rectangle of the checkbox label relative to the window's client area
-                let ctrl_rect = match self2.top_label.hwnd().GetWindowRect() {
-                    Ok(rect) => match self2
-                        .wnd
-                        .hwnd()
-                        .ScreenToClient(POINT::with(rect.left, rect.top))
-                    {
-                        // Expand the rectangle slightly to make it more visible
-                        Ok(pt) => RECT {
-                            left: pt.x - 2,
-                            top: pt.y - 1,
-                            right: pt.x + (rect.right - rect.left) + 1,
-                            bottom: pt.y + (rect.bottom - rect.top) + 1,
-                        },
-                        Err(e) => {
-                            eprintln!("ScreenToClient failed: {e}");
-                            return Ok(());
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("GetWindowRect failed: {e}");
-                        return Ok(());
-                    }
-                };
-
                 // Draw a focus rectangle around the checkbox label
-                // The focus rectangle does not draw over controls, so space is left between the checkbox and the label
                 self2
-                    .wnd
-                    .hwnd()
-                    .GetDC()
-                    .unwrap()
-                    .DrawFocusRect(ctrl_rect)
-                    .map_err(|e| eprintln!("DrawFocusRect failed: {e}"))
+                    .toggle_label_focus_rectangle()
+                    .map_err(|e| {
+                        eprintln!("Failed to draw focus rectangle on checkbox label: {e}");
+                    })
                     .ok();
 
                 Ok(())
@@ -1045,12 +1065,13 @@ impl MyWindow {
             let self2 = self.clone();
             move |hwnd| {
                 unsafe { self2.wnd.hwnd().DefSubclassProc(hwnd) };
-                // Clear any existing focus rectangle by redrawing the window region
+                // Erase the focus rectangle around the checkbox label
+                // The focus rectangle is drawn using XOR, so drawing it again will erase it
                 self2
-                    .wnd
-                    .hwnd()
-                    .InvalidateRect(None, true)
-                    .map_err(|e| eprintln!("InvalidateRect failed: {e}"))
+                    .toggle_label_focus_rectangle()
+                    .map_err(|e| {
+                        eprintln!("Failed to erase focus rectangle on checkbox label: {e}");
+                    })
                     .ok();
 
                 Ok(())
