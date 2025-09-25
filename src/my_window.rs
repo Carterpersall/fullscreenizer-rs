@@ -9,7 +9,9 @@ use winsafe::co::SWP;
 use winsafe::guard::ImageListDestroyGuard;
 use winsafe::gui::dpi;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
-use winsafe::prelude::{GuiParent, GuiWindow, Handle};
+use winsafe::prelude::{
+    GuiEventsButton, GuiEventsLabel, GuiEventsParent, GuiEventsWindow, GuiWindow, Handle,
+};
 use winsafe::{
     self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HICON, HIMAGELIST,
     HwndPlace, POINT, RECT, SIZE, co, gui,
@@ -44,7 +46,7 @@ pub struct MyWindow {
 impl MyWindow {
     pub fn new() -> Self {
         let wnd = gui::WindowMain::new(gui::WindowMainOpts {
-            title: "Fullscreenizer".to_owned(),
+            title: "Fullscreenizer",
             class_icon: gui::Icon::Id(101),
             size: dpi(305, 400),
             style: gui::WindowMainOpts::default().style
@@ -57,7 +59,7 @@ impl MyWindow {
         let label = gui::Label::new(
             &wnd,
             gui::LabelOpts {
-                text: "Toplevel windows:".to_string(),
+                text: "Toplevel windows:",
                 position: dpi(10, 9),
                 size: dpi(200, 20),
                 control_style: co::SS::LEFTNOWORDWRAP,
@@ -74,7 +76,7 @@ impl MyWindow {
                 position: dpi(8, 29),
                 size: dpi(289, 307),
                 // Make the single column very wide, so that the end of the column is never visible
-                columns: vec![("".to_owned(), 32000)],
+                columns: &[("", 32000)],
                 control_style: co::LVS::NOSORTHEADER
                     | co::LVS::SHOWSELALWAYS
                     | co::LVS::NOCOLUMNHEADER
@@ -115,7 +117,7 @@ impl MyWindow {
         let top_label = gui::Label::new(
             &wnd,
             gui::LabelOpts {
-                text: "Apply \"stay on top\" flag to avoid taskbar flickering".to_owned(),
+                text: "Apply \"stay on top\" flag to avoid taskbar flickering",
                 position: dpi(32, 342),
                 size: dpi(338, 20),
                 control_style: co::SS::LEFTNOWORDWRAP | co::SS::NOTIFY,
@@ -129,7 +131,7 @@ impl MyWindow {
         let btn_canvas = gui::Label::new(
             &wnd,
             gui::LabelOpts {
-                text: "".to_owned(),
+                text: "",
                 position: dpi(8, 360),
                 size: dpi(290, 40),
                 window_style: co::WS::CHILD | co::WS::VISIBLE | co::WS::CLIPSIBLINGS,
@@ -141,7 +143,7 @@ impl MyWindow {
         let refresh_btn = gui::Button::new(
             &wnd,
             gui::ButtonOpts {
-                text: "&Refresh".to_owned(),
+                text: "&Refresh",
                 position: dpi(13, 368),
                 ..Default::default()
             },
@@ -150,7 +152,7 @@ impl MyWindow {
         let help_btn = gui::Button::new(
             &wnd,
             gui::ButtonOpts {
-                text: "&Help".to_owned(),
+                text: "&Help",
                 position: dpi(108, 368),
                 ..Default::default()
             },
@@ -159,7 +161,7 @@ impl MyWindow {
         let fullscreenize_btn = gui::Button::new(
             &wnd,
             gui::ButtonOpts {
-                text: "&Fullscreenize".to_owned(),
+                text: "&Fullscreenize",
                 position: dpi(202, 368),
                 ..Default::default()
             },
