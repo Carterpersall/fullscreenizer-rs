@@ -121,7 +121,6 @@ impl MyWindow {
                 size: dpi(338, 20),
                 control_style: co::SS::LEFTNOWORDWRAP | co::SS::NOTIFY,
                 window_style: co::WS::CHILD | co::WS::VISIBLE,
-                window_ex_style: co::WS_EX::TOPMOST,
                 ..Default::default()
             },
         );
@@ -533,7 +532,11 @@ impl MyWindow {
             self.process_list
                 .hwnd()
                 .SendMessage(w::msg::lvm::SetImageList {
-                    himagelist: Some(image_list.raw_copy()),
+                    himagelist: if self.use_icons.load(Ordering::SeqCst) {
+                        Some(image_list.raw_copy())
+                    } else {
+                        None
+                    },
                     kind: co::LVSIL::SMALL,
                 })
         };
