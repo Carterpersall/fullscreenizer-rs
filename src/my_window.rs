@@ -86,7 +86,6 @@ impl MyWindow {
                     | co::WS::VISIBLE
                     | co::WS::TABSTOP
                     | co::WS::GROUP
-                    | co::WS::VSCROLL
                     | co::WS::CLIPSIBLINGS,
                 // Resize horizontally and vertically together with parent window.
                 resize_behavior: (gui::Horz::Resize, gui::Vert::Resize),
@@ -485,10 +484,7 @@ impl MyWindow {
                     match image_list.AddIcon(&icon) {
                         Ok(id) => Some(id),
                         Err(e) => {
-                            eprintln!(
-                                "AddIcon failed: '{e}' - GetLastError: '{}'",
-                                w::GetLastError()
-                            );
+                            eprintln!("AddIcon failed: '{e}'",);
                             None
                         }
                     }
@@ -519,10 +515,12 @@ impl MyWindow {
                 && let Ok(window_icons) = self.window_icons.lock()
             {
                 for icon in window_icons.iter() {
-                    image_list.AddIcon(icon).unwrap_or_else(|e| {
-                        eprintln!("AddIcon failed {e}\n");
-                        u32::MAX
-                    });
+                    image_list
+                        .AddIcon(icon)
+                        .map_err(|e| {
+                            eprintln!("AddIcon failed {e}\n");
+                        })
+                        .ok();
                 }
             }
         }
@@ -1201,7 +1199,7 @@ impl MyWindow {
                 match AdjustWindowRectExForDpi(rect, window.style(), false, window.style_ex(), window.GetDpiForWindow()) {
                     Ok(rct) => rect = rct,
                     Err(e) => {
-                        show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectEx failed with error: {e}"));
+                        show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectExForDpi failed with error: {e}"));
                         return Ok(());
                     }
                 }
