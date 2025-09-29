@@ -1207,18 +1207,21 @@ impl MyWindow {
                 }
 
                 // Set window to stay on top if checkbox is checked
-                if self2.top_toggle.is_checked() {
-                    window.set_style_ex(window.style_ex() | co::WS_EX::TOPMOST);
-                }
+                let hwnd_insert_after = if self2.top_toggle.is_checked() {
+                    HwndPlace::Place(w::co::HWND_PLACE::TOPMOST)
+                } else {
+                    HwndPlace::None
+                };
 
                 // Set the window position
                 window
-                    .MoveWindow(
+                    .SetWindowPos(
+                        hwnd_insert_after,
                         POINT::with(rect.left, rect.top),
                         SIZE::with(rect.right - rect.left, rect.bottom - rect.top),
-                        true,
+                        SWP::FRAMECHANGED,
                     )
-                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - MoveWindow failed with error: {e}")))
+                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - SetWindowPos failed with error: {e}")))
                     .ok();
 
                 Ok(())
