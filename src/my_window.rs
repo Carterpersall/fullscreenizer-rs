@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
 use winsafe::co::SWP;
-use winsafe::guard::ImageListDestroyGuard;
+use winsafe::guard::{DestroyIconGuard, ImageListDestroyGuard};
 use winsafe::gui::dpi;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::prelude::{
@@ -476,15 +476,18 @@ impl MyWindow {
                         }
                     };
 
-                    // Cache the icon
-                    if let Ok(mut window_icons) = self.window_icons.lock() {
-                        window_icons.push(icon.CopyIcon().unwrap_or_else(|_| unsafe {
-                            w::guard::DestroyIconGuard::new(HICON::NULL)
-                        }));
-                    }
                     // Add the icon to the image list
                     match image_list.AddIcon(&icon) {
-                        Ok(id) => Some(id),
+                        Ok(id) => {
+                            // Cache the icon by adding it to the global vector
+                            if let Ok(mut window_icons) = self.window_icons.lock() {
+                                window_icons.push(unsafe { DestroyIconGuard::new(icon) });
+                            } else {
+                                eprintln!("Failed to lock window_icons mutex");
+                            }
+
+                            Some(id)
+                        }
                         Err(e) => {
                             eprintln!("AddIcon failed: '{e}'",);
                             None
