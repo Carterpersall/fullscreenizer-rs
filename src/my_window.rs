@@ -425,6 +425,8 @@ impl MyWindow {
             unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
         });
 
+        let use_icons = self.use_icons.load(Ordering::SeqCst);
+
         // Enumerate over all open windows
         if scan_windows {
             // Clear the process list, window vector, and icon cache
@@ -448,7 +450,7 @@ impl MyWindow {
                     return true;
                 }
 
-                let icon_id = if self.use_icons.load(Ordering::SeqCst) {
+                let icon_id = if use_icons {
                     // Get the window icon
                     let icon = match unsafe {
                         HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
@@ -516,9 +518,7 @@ impl MyWindow {
             .ok();
         } else {
             // Add icons to the new image list from the icon cache
-            if self.use_icons.load(Ordering::SeqCst)
-                && let Ok(window_icons) = self.window_icons.lock()
-            {
+            if use_icons && let Ok(window_icons) = self.window_icons.lock() {
                 for icon in window_icons.iter() {
                     image_list
                         .AddIcon(icon)
@@ -535,7 +535,7 @@ impl MyWindow {
             self.process_list
                 .hwnd()
                 .SendMessage(w::msg::lvm::SetImageList {
-                    himagelist: if self.use_icons.load(Ordering::SeqCst) {
+                    himagelist: if use_icons {
                         Some(image_list.raw_copy())
                     } else {
                         None
