@@ -49,10 +49,7 @@ impl MyWindow {
             title: "Fullscreenizer",
             class_icon: gui::Icon::Id(101),
             size: dpi(305, 400),
-            style: gui::WindowMainOpts::default().style
-                | co::WS::OVERLAPPEDWINDOW
-                | co::WS::CLIPCHILDREN
-                | co::WS::SIZEBOX, // window can be resized
+            style: co::WS::OVERLAPPEDWINDOW | co::WS::CLIPCHILDREN,
             ..Default::default()
         });
 
@@ -254,42 +251,35 @@ impl MyWindow {
             }
         };
 
-        // Store the font in the shared resource
-        if let Ok(mut app_font) = self.app_font.write() {
-            *app_font = Some(font);
+        // Update the font for all controls
+        unsafe {
+            self.label.hwnd().SendMessage(w::msg::wm::SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
+            self.top_label.hwnd().SendMessage(w::msg::wm::SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
+            self.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
+            self.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
+            self.fullscreenize_btn
+                .hwnd()
+                .SendMessage(w::msg::wm::SetFont {
+                    hfont: font.raw_copy(),
+                    redraw: true,
+                });
         }
 
-        // Update the font for all controls
-        match self.app_font.read() {
-            Ok(app_font) => {
-                if let Some(font) = app_font.as_ref() {
-                    unsafe {
-                        self.label.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: font.raw_copy(),
-                            redraw: true,
-                        });
-                        self.top_label.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: font.raw_copy(),
-                            redraw: true,
-                        });
-                        self.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: font.raw_copy(),
-                            redraw: true,
-                        });
-                        self.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: font.raw_copy(),
-                            redraw: true,
-                        });
-                        self.fullscreenize_btn
-                            .hwnd()
-                            .SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            });
-                    }
-                }
-            }
-            Err(e) => eprintln!("Failed to lock app_font mutex: {e}"),
+        // Store the font in the shared resource so that its lifetime is extended beyond this function
+        if let Ok(mut app_font) = self.app_font.write() {
+            *app_font = Some(font);
         }
     }
 
