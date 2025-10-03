@@ -23,12 +23,14 @@ use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 use windows::core::{PCWSTR, PWSTR};
 
 use winsafe::co::SWP;
-use winsafe::guard::ImageListDestroyGuard;
+use winsafe::guard::{DestroyIconGuard, ImageListDestroyGuard};
 use winsafe::gui::dpi;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
-use winsafe::prelude::{GuiParent, GuiWindow, Handle};
+use winsafe::prelude::{
+    GuiEventsButton, GuiEventsLabel, GuiEventsParent, GuiEventsWindow, GuiWindow, Handle,
+};
 use winsafe::{
-    self as w, AdjustWindowRectEx, COLORREF, DwmAttr, EnumWindows, HBRUSH, HICON, HIMAGELIST,
+    self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HICON, HIMAGELIST,
     HwndPlace, POINT, RECT, SIZE, co, gui,
 };
 
@@ -38,7 +40,8 @@ pub struct MyWindow {
     wnd: gui::WindowMain,
     label: gui::Label,
     process_list: gui::ListView,
-    top_toggle: gui::ListView,
+    top_toggle: gui::CheckBox,
+    top_label: gui::Label,
     btn_canvas: gui::Label,
     refresh_btn: gui::Button,
     help_btn: gui::Button,
@@ -52,6 +55,7 @@ pub struct MyWindow {
     // Shared resources
     app_font: Rc<RwLock<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
     app_dpi: Arc<AtomicU32>,
+    background_hbrush: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HBRUSH>>>>,
     imagelist: Arc<Mutex<Option<w::guard::ImageListDestroyGuard>>>,
     window_icons: Arc<Mutex<Vec<w::guard::DestroyIconGuard>>>,
 }
@@ -59,20 +63,17 @@ pub struct MyWindow {
 impl MyWindow {
     pub fn new() -> Self {
         let wnd = gui::WindowMain::new(gui::WindowMainOpts {
-            title: "Fullscreenizer".to_owned(),
+            title: "Fullscreenizer",
             class_icon: gui::Icon::Id(101),
             size: dpi(305, 400),
-            style: gui::WindowMainOpts::default().style
-                | co::WS::OVERLAPPEDWINDOW
-                | co::WS::CLIPCHILDREN
-                | co::WS::SIZEBOX, // window can be resized
+            style: co::WS::OVERLAPPEDWINDOW | co::WS::CLIPCHILDREN,
             ..Default::default()
         });
 
         let label = gui::Label::new(
             &wnd,
             gui::LabelOpts {
-                text: "Toplevel windows:".to_string(),
+                text: "Toplevel windows:",
                 position: dpi(10, 9),
                 size: dpi(200, 20),
                 control_style: co::SS::LEFTNOWORDWRAP,
@@ -88,7 +89,8 @@ impl MyWindow {
             gui::ListViewOpts {
                 position: dpi(8, 29),
                 size: dpi(289, 307),
-                columns: vec![("".to_owned(), 999)],
+                // Make the single column very wide, so that the end of the column is never visible
+                columns: &[("", 32000)],
                 control_style: co::LVS::NOSORTHEADER
                     | co::LVS::SHOWSELALWAYS
                     | co::LVS::NOCOLUMNHEADER
@@ -100,7 +102,6 @@ impl MyWindow {
                     | co::WS::VISIBLE
                     | co::WS::TABSTOP
                     | co::WS::GROUP
-                    | co::WS::VSCROLL
                     | co::WS::CLIPSIBLINGS,
                 // Resize horizontally and vertically together with parent window.
                 resize_behavior: (gui::Horz::Resize, gui::Vert::Resize),
@@ -108,31 +109,33 @@ impl MyWindow {
             },
         );
 
-        let top_toggle = gui::ListView::new(
+        // Checkbox to toggle the "stay on top" flag
+        let top_toggle = gui::CheckBox::new(
             &wnd,
-            gui::ListViewOpts {
-                position: dpi(2, 342),
-                size: dpi(300, 20),
-                columns: vec![("".to_owned(), 999)],
-                control_style: co::LVS::NOSORTHEADER
-                    | co::LVS::SHOWSELALWAYS
-                    | co::LVS::NOCOLUMNHEADER
-                    | co::LVS::NOLABELWRAP
-                    | co::LVS::SINGLESEL
-                    | co::LVS::REPORT
-                    | co::LVS::NOSCROLL
-                    | co::LVS::SHAREIMAGELISTS,
-                control_ex_style: co::LVS_EX::DOUBLEBUFFER
-                    | co::LVS_EX::BORDERSELECT
-                    | co::LVS_EX::AUTOSIZECOLUMNS
-                    | co::LVS_EX::CHECKBOXES,
+            gui::CheckBoxOpts {
+                position: dpi(8, 342),
+                size: dpi(20, 20),
                 window_style: co::WS::CHILD
                     | co::WS::VISIBLE
                     | co::WS::TABSTOP
                     | co::WS::GROUP
                     | co::WS::CLIPSIBLINGS,
-                // Resize horizontally and vertically together with parent window.
-                resize_behavior: (gui::Horz::Resize, gui::Vert::Repos),
+                check_state: co::BST::UNCHECKED,
+                ..Default::default()
+            },
+        );
+
+        // Label for the top_toggle checkbox
+        // While setting the text of the checkbox can be done, the resulting text's color cannot be changed
+        // Therefore, a label is used instead
+        let top_label = gui::Label::new(
+            &wnd,
+            gui::LabelOpts {
+                text: "Apply \"stay on top\" flag to avoid taskbar flickering",
+                position: dpi(32, 342),
+                size: dpi(338, 20),
+                control_style: co::SS::LEFTNOWORDWRAP | co::SS::NOTIFY,
+                window_style: co::WS::CHILD | co::WS::VISIBLE,
                 ..Default::default()
             },
         );
@@ -142,7 +145,7 @@ impl MyWindow {
         let btn_canvas = gui::Label::new(
             &wnd,
             gui::LabelOpts {
-                text: "".to_owned(),
+                text: "",
                 position: dpi(8, 360),
                 size: dpi(290, 40),
                 window_style: co::WS::CHILD | co::WS::VISIBLE | co::WS::CLIPSIBLINGS,
@@ -154,7 +157,7 @@ impl MyWindow {
         let refresh_btn = gui::Button::new(
             &wnd,
             gui::ButtonOpts {
-                text: "&Refresh".to_owned(),
+                text: "&Refresh",
                 position: dpi(13, 368),
                 ..Default::default()
             },
@@ -163,7 +166,7 @@ impl MyWindow {
         let help_btn = gui::Button::new(
             &wnd,
             gui::ButtonOpts {
-                text: "&Help".to_owned(),
+                text: "&Help",
                 position: dpi(108, 368),
                 ..Default::default()
             },
@@ -172,7 +175,7 @@ impl MyWindow {
         let fullscreenize_btn = gui::Button::new(
             &wnd,
             gui::ButtonOpts {
-                text: "&Fullscreenize".to_owned(),
+                text: "&Fullscreenize",
                 position: dpi(202, 368),
                 ..Default::default()
             },
@@ -200,6 +203,8 @@ impl MyWindow {
         // The current DPI of the window
         // This is used to scale the window elements based on a 125% (120 DPI) display
         let app_dpi = Arc::new(AtomicU32::new(120));
+        // Stores the brush used to paint the background of the labels and window
+        let background_hbrush = Arc::new(Mutex::new(None));
         // The image list for the window icons
         let imagelist = Arc::new(Mutex::new(None));
         // A vector to store the icons of the windows
@@ -210,6 +215,7 @@ impl MyWindow {
             label,
             process_list,
             top_toggle,
+            top_label,
             btn_canvas,
             refresh_btn,
             help_btn,
@@ -219,6 +225,7 @@ impl MyWindow {
             excluded_apps,
             app_font,
             app_dpi,
+            background_hbrush,
             imagelist,
             window_icons,
         };
@@ -261,46 +268,41 @@ impl MyWindow {
             }
         };
 
-        // Store the font in the shared resource
-        if let Ok(mut app_font) = self.app_font.write() {
-            *app_font = Some(font);
+        // Update the font for all controls
+        unsafe {
+            self.label.hwnd().SendMessage(w::msg::wm::SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
+            self.top_label.hwnd().SendMessage(w::msg::wm::SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
+            self.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
+            self.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
+            self.fullscreenize_btn
+                .hwnd()
+                .SendMessage(w::msg::wm::SetFont {
+                    hfont: font.raw_copy(),
+                    redraw: true,
+                });
         }
 
-        // Update the font for all controls
-        match self.app_font.read() {
-            Ok(app_font) => {
-                if let Some(font) = app_font.as_ref() {
-                    unsafe {
-                        self.label.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: font.raw_copy(),
-                            redraw: true,
-                        });
-                        self.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: font.raw_copy(),
-                            redraw: true,
-                        });
-                        self.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
-                            hfont: font.raw_copy(),
-                            redraw: true,
-                        });
-                        self.fullscreenize_btn
-                            .hwnd()
-                            .SendMessage(w::msg::wm::SetFont {
-                                hfont: font.raw_copy(),
-                                redraw: true,
-                            });
-                    }
-                }
-            }
-            Err(e) => eprintln!("Failed to lock app_font mutex: {e}"),
+        // Store the font in the shared resource so that its lifetime is extended beyond this function
+        if let Ok(mut app_font) = self.app_font.write() {
+            *app_font = Some(font);
         }
     }
 
     fn enable_dark_mode(&self) {
-        // Get a handle to the window
+        // Get a handle to the window and process list
         let wnd = self.wnd.hwnd();
-
-        // Get a handle to the process list
         let process_list = self.process_list.hwnd();
 
         // Enable dark mode on the window
@@ -315,6 +317,11 @@ impl MyWindow {
         process_list
             .SetWindowTheme("DarkMode_Explorer", None)
             .map_err(|e| eprintln!("SetWindowTheme on process list failed: {e}"))
+            .ok();
+        self.top_toggle
+            .hwnd()
+            .SetWindowTheme("DarkMode_Explorer", None)
+            .map_err(|e| eprintln!("SetWindowTheme on top toggle failed: {e}"))
             .ok();
         self.refresh_btn
             .hwnd()
@@ -358,36 +365,6 @@ impl MyWindow {
         }
         .map_err(|e| eprintln!("SetTextColor failed: {e}"))
         .ok();
-
-        // Get the handle of the top toggle
-        let top_toggle = self.top_toggle.hwnd();
-
-        // Set the background color of the checkbox listview to the same as the window background
-        unsafe {
-            top_toggle.SendMessage(SetBkColor {
-                color: Option::from(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)),
-            })
-        }
-        .map_err(|e| eprintln!("SetBkColor failed: {e}"))
-        .ok();
-
-        // Set the background color of the element in the checkbox listview
-        unsafe {
-            top_toggle.SendMessage(SetTextBkColor {
-                color: Option::from(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)),
-            })
-        }
-        .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
-        .ok();
-
-        // Set the text color of the elements in the checkbox listview
-        unsafe {
-            top_toggle.SendMessage(SetTextColor {
-                color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
-            })
-        }
-        .map_err(|e| eprintln!("SetTextColor failed: {e}"))
-        .ok();
     }
 
     fn set_system_theme(&self) {
@@ -424,24 +401,6 @@ impl MyWindow {
             // Enable dark mode on the window
             self.enable_dark_mode();
         } else {
-            // Set the background color of the checkbox listview to the same as the window background
-            unsafe {
-                self.top_toggle.hwnd().SendMessage(SetBkColor {
-                    color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
-                })
-            }
-            .map_err(|e| eprintln!("SetBkColor failed: {e}"))
-            .ok();
-
-            // Set the background color of the element in the checkbox listview
-            unsafe {
-                self.top_toggle.hwnd().SendMessage(SetTextBkColor {
-                    color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
-                })
-            }
-            .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
-            .ok();
-
             // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
             self.process_list
                 .hwnd()
@@ -461,7 +420,7 @@ impl MyWindow {
 
         // Create an image list to store the icons
         let image_list = HIMAGELIST::Create(
-            SIZE::with(16 * dpi / 120, 16 * dpi / 120),
+            SIZE::with(20 * dpi / 120, 20 * dpi / 120),
             co::ILC::COLOR32,
             0,
             100,
@@ -472,6 +431,8 @@ impl MyWindow {
             eprintln!("Imagelist Creation failed {e}");
             unsafe { ImageListDestroyGuard::new(HIMAGELIST::NULL) }
         });
+
+        let use_icons = self.use_icons.load(Ordering::SeqCst);
 
         // Enumerate over all open windows
         if scan_windows {
@@ -496,7 +457,7 @@ impl MyWindow {
                     return true;
                 }
 
-                let icon_id = if self.use_icons.load(Ordering::SeqCst) {
+                let icon_id = if use_icons {
                     // Get the window icon
                     let icon = match unsafe {
                         HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
@@ -555,20 +516,20 @@ impl MyWindow {
                         }
                     };
 
-                    // Cache the icon
-                    if let Ok(mut window_icons) = self.window_icons.lock() {
-                        window_icons.push(icon.CopyIcon().unwrap_or_else(|_| unsafe {
-                            w::guard::DestroyIconGuard::new(HICON::NULL)
-                        }));
-                    }
                     // Add the icon to the image list
                     match image_list.AddIcon(&icon) {
-                        Ok(id) => Some(id),
+                        Ok(id) => {
+                            // Cache the icon by adding it to the global vector
+                            if let Ok(mut window_icons) = self.window_icons.lock() {
+                                window_icons.push(unsafe { DestroyIconGuard::new(icon) });
+                            } else {
+                                eprintln!("Failed to lock window_icons mutex");
+                            }
+
+                            Some(id)
+                        }
                         Err(e) => {
-                            eprintln!(
-                                "AddIcon failed: '{e}' - GetLastError: '{}'",
-                                w::GetLastError()
-                            );
+                            eprintln!("AddIcon failed: '{e}'",);
                             None
                         }
                     }
@@ -595,14 +556,14 @@ impl MyWindow {
             .ok();
         } else {
             // Add icons to the new image list from the icon cache
-            if self.use_icons.load(Ordering::SeqCst)
-                && let Ok(window_icons) = self.window_icons.lock()
-            {
+            if use_icons && let Ok(window_icons) = self.window_icons.lock() {
                 for icon in window_icons.iter() {
-                    image_list.AddIcon(icon).unwrap_or_else(|e| {
-                        eprintln!("AddIcon failed {e}\n");
-                        u32::MAX
-                    });
+                    image_list
+                        .AddIcon(icon)
+                        .map_err(|e| {
+                            eprintln!("AddIcon failed {e}\n");
+                        })
+                        .ok();
                 }
             }
         }
@@ -612,7 +573,11 @@ impl MyWindow {
             self.process_list
                 .hwnd()
                 .SendMessage(w::msg::lvm::SetImageList {
-                    himagelist: Some(image_list.raw_copy()),
+                    himagelist: if use_icons {
+                        Some(image_list.raw_copy())
+                    } else {
+                        None
+                    },
                     kind: co::LVSIL::SMALL,
                 })
         };
@@ -621,6 +586,44 @@ impl MyWindow {
         if let Ok(mut imagelist) = self.imagelist.lock() {
             imagelist.replace(image_list);
         }
+
+        Ok(())
+    }
+
+    fn toggle_label_focus_rectangle(&self) -> Result<(), String> {
+        // Get the rectangle of the checkbox label relative to the window's client area
+        let ctrl_rect = match self.top_label.hwnd().GetWindowRect() {
+            Ok(rect) => match self
+                .wnd
+                .hwnd()
+                .ScreenToClient(POINT::with(rect.left, rect.top))
+            {
+                // Expand the rectangle slightly to make it more visible
+                Ok(pt) => RECT {
+                    left: pt.x - 2,
+                    top: pt.y - 1,
+                    right: pt.x + (rect.right - rect.left) + 1,
+                    bottom: pt.y + (rect.bottom - rect.top) + 1,
+                },
+                Err(e) => {
+                    eprintln!("ScreenToClient failed: {e}");
+                    return Err(format!("ScreenToClient failed: {e}").to_owned());
+                }
+            },
+            Err(e) => {
+                eprintln!("GetWindowRect failed: {e}");
+                return Err(format!("GetWindowRect failed: {e}").to_owned());
+            }
+        };
+
+        // Draw a focus rectangle around the checkbox label
+        // The focus rectangle does not draw over controls, so space is left between the checkbox and the label
+        self.wnd
+            .hwnd()
+            .GetDC()
+            .unwrap()
+            .DrawFocusRect(ctrl_rect)
+            .map_err(|e| format!("DrawFocusRect failed: {e}"))?;
 
         Ok(())
     }
@@ -646,8 +649,21 @@ impl MyWindow {
                 // Refresh the process list
                 self2.refresh_btn.trigger_click();
 
-                // Start an one-shot timer for some post-creation tasks
-                self2.wnd.hwnd().SetTimer(1, 1, None).ok();
+                // Send a message to handle post-creation tasks
+                unsafe {
+                    self2
+                        .wnd
+                        .hwnd()
+                        .PostMessage(w::msg::WndMsg::new(
+                            co::WM::APP,
+                            co::WM::USER.raw() as usize,
+                            0,
+                        ))
+                        .map_err(|e| {
+                            eprintln!("Failed to post WM_APP message - PostMessage Failed: {e}");
+                        })
+                        .ok();
+                };
 
                 // Call the default window procedure
                 unsafe { self2.wnd.hwnd().DefWindowProc(create) };
@@ -657,46 +673,29 @@ impl MyWindow {
         });
 
         // Handle post-creation tasks
-        self.wnd.on().wm_timer(1, {
+        self.wnd.on().wm(co::WM::APP,{
             let self2 = self.clone();
-            move || {
-                // Stop the timer
-                self2.wnd.hwnd().KillTimer(1).ok();
+            move |msg| {
+                if msg.wparam == co::WM::USER.raw() as usize {
+                    // Set the canvas as the button's parent
+                    self2.refresh_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
+                    self2.help_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
+                    self2.fullscreenize_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
 
-                // Add text to the checkbox listview
-                self2.top_toggle.items().add(
-                    &["Apply \"stay on top\" flag to avoid taskbar flickering"],
-                    None,
-                    (),
-                )?;
+                    // Force the buttons to repaint
+                    // Without this, the buttons are not visible until they are updated by hovering over them
+                    self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}")
+                    }).ok();
+                    self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}")
+                    }).ok();
+                    self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
+                        eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
+                    }).ok();
+                }
 
-                // Set the canvas as the button's parent
-                self2.refresh_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
-                self2.help_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
-                self2.fullscreenize_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
-
-                // Force the buttons to repaint
-                // Without this, the buttons are not visible until they are updated by hovering over them
-                self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                    eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}")
-                }).ok();
-                self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                    eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}")
-                }).ok();
-                self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                    eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
-                }).ok();
-
-                // Hide the process list's horizontal scrollbar
-                // The scrollbar would otherwise appear since the process list's column is wider than the listview
-                self2.process_list.hwnd().ShowScrollBar(
-                    co::SBB::HORZ,
-                    false
-                ).map_err(|e| {
-                    eprintln!("Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}");
-                }).ok();
-
-                Ok(())
+                Ok(0)
             }
         });
 
@@ -773,6 +772,18 @@ impl MyWindow {
                 // Get the current dpi of the window
                 let app_dpi = self2.app_dpi.load(Ordering::Relaxed);
 
+                let top_label_focused = w::HWND::GetFocus().map_or_else(|| false, |hwnd| {
+                    &hwnd == self2.top_toggle.hwnd()
+                });
+
+                if top_label_focused {
+                    // If the checkbox label has focus, draw the focus rectangle again
+                    // The focus rectangle is drawn using XOR, so drawing it again will erase the previous one
+                    self2.toggle_label_focus_rectangle().map_err(|e| {
+                        eprintln!("Failed to erase stay on to toggle's label focus rectangle: {e}");
+                    }).ok();
+                }
+
                 // Get the new window dimensions
                 let new_size = RECT {
                     left: 0,
@@ -819,51 +830,43 @@ impl MyWindow {
                     })
                     .ok();
 
-                // Resize the only column in the process list to be slightly wider than the listview
-                // This prevents a vertical line indicating the end of the column from being visible
-                self2
-                    .process_list
-                    .cols()
-                    .get(0)
-                    .set_width((new_size.right - new_size.left) - (16 * app_dpi / 120) as i32)
-                    .map_err(|e| {
-                        eprintln!("Failed to resize process list column - SetWidth Failed: {e}")
-                    })
-                    .ok();
-
-                // Hide the process list's horizontal scrollbar
-                // The scrollbar would otherwise appear since the process list's column is wider than the listview
-                self2
-                    .process_list
-                    .hwnd()
-                    .ShowScrollBar(co::SBB::HORZ, false)
-                    .map_err(|e| {
-                        eprintln!(
-                            "Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}"
-                        );
-                    })
-                    .ok();
-
-                // Resize and move the checkbox listview
+                // Resize and move the checkbox
                 self2
                     .top_toggle
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with(
-                            (2 * app_dpi / 120) as i32,
-                            (29 * app_dpi / 120) as i32
+                            (8 * app_dpi / 120) as i32,
+                            (31 * app_dpi / 120) as i32
                                 + ((new_size.bottom - new_size.top)
                                     - ((29 + 20 + 20 + 33) * app_dpi / 120) as i32),
                         ),
-                        SIZE::with(
-                            (new_size.right - new_size.left) - (4 * app_dpi / 120) as i32,
-                            (25 * app_dpi / 120) as i32,
-                        ),
+                        SIZE::with((20 * app_dpi / 120) as i32, (20 * app_dpi / 120) as i32),
                         SWP::NOZORDER,
                     )
+                    .map_err(|e| eprintln!("Failed to resize checkbox - SetWindowPos Failed: {e}"))
+                    .ok();
+
+                // Resize and move the label for the checkbox
+                self2
+                    .top_label
+                    .hwnd()
+                    .SetWindowPos(
+                        HwndPlace::None,
+                        POINT::with(
+                            // Leave a small gap between the checkbox and the label for the selection box
+                            ((8 + 22) * app_dpi / 120) as i32,
+                            (31 * app_dpi / 120) as i32
+                                + ((new_size.bottom - new_size.top)
+                                    - ((29 + 20 + 20 + 33) * app_dpi / 120) as i32),
+                        ),
+                        SIZE::with((338 * app_dpi / 120) as i32, (20 * app_dpi / 120) as i32),
+                        // Don't use the SWP::NOZORDER flag, otherwise the previous frame of the listview may be visible
+                        SWP::default(),
+                    )
                     .map_err(|e| {
-                        eprintln!("Failed to resize checkbox listview - SetWindowPos Failed: {e}")
+                        eprintln!("Failed to resize label for checkbox - SetWindowPos Failed: {e}")
                     })
                     .ok();
 
@@ -938,12 +941,18 @@ impl MyWindow {
                     })
                     .ok();
 
+                // Check if the checkbox has focus
+                if let Some(hwnd) = w::HWND::GetFocus() && &hwnd == self2.top_toggle.hwnd() {
+                    // Redraw the focus rectangle around the checkbox at its new position
+                    self2.toggle_label_focus_rectangle().map_err(|e| {
+                        eprintln!("Failed to draw focus rectangle around stay on top toggle's label: {e}");
+                    }).ok();
+                }
+
                 Ok(())
             }
         });
 
-        // Stores the brush used to paint the label's background
-        let label_hbrush: Arc<Mutex<HBRUSH>> = Arc::new(Mutex::new(HBRUSH::NULL));
         self.wnd.on().wm_ctl_color_static({
             let self2 = self.clone();
             move |ctl| {
@@ -967,25 +976,32 @@ impl MyWindow {
                     .SetBkColor(color)
                     .map_err(|e| eprintln!("SetBkColor on the label failed: {e}"));
 
-                // If the brush in the Arc Mutex is NULL, create a new solid brush
-                if let Ok(mut label_hbrush) = label_hbrush.lock() {
-                    if *label_hbrush == HBRUSH::NULL {
-                        HBRUSH::CreateSolidBrush(color).map_or_else(
-                            |e| {
-                                eprintln!("CreateSolidBrush failed: {e}");
-                            },
-                            |mut hbrush| {
-                                // Set the brush in the Arc Mutex
-                                *label_hbrush = hbrush.leak();
-                            },
-                        );
-                    }
-                }
+                // Set the background color of the label by returning a handle to a brush
+                Ok(match self2.background_hbrush.lock() {
+                    Ok(mut background_hbrush) => {
+                        // Create the brush if it does not exist
+                        if background_hbrush.is_none() {
+                            HBRUSH::CreateSolidBrush(color).map_or_else(
+                                |e| {
+                                    eprintln!("CreateSolidBrush failed: {e}");
+                                },
+                                |hbrush| {
+                                    // Set the brush in the Arc Mutex
+                                    *background_hbrush = Some(hbrush);
+                                },
+                            )
+                        }
 
-                // Set the background color of the label
-                Ok(label_hbrush
-                    .lock()
-                    .map_or(HBRUSH::NULL, |hbrush| unsafe { hbrush.raw_copy() }))
+                        // Return a handle to the brush, if it exists
+                        background_hbrush
+                            .as_ref()
+                            .map_or_else(|| HBRUSH::NULL, |hbrush| unsafe { hbrush.raw_copy() })
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to lock background brush mutex: {e}");
+                        HBRUSH::NULL
+                    }
+                })
             }
         });
 
@@ -994,49 +1010,147 @@ impl MyWindow {
             move |erase_bkgnd| -> w::AnyResult<i32> {
                 // Set the background color of the window in dark mode
                 if self2.is_dark_mode.load(Ordering::Relaxed) {
-                    // Create a solid brush with the dark mode background color
-                    match HBRUSH::CreateSolidBrush(COLORREF::from_rgb(0x1E, 0x1E, 0x1E)) {
-                        Ok(hbrush) => {
-                            match self2.wnd.hwnd().GetClientRect() {
-                                Ok(rect) => {
-                                    // Set the background color of the window
-                                    erase_bkgnd
-                                        .hdc
-                                        .FillRect(rect, &hbrush)
-                                        .map_err(|e| eprintln!("FillRect failed: {e}"))
-                                        .ok();
+                    match self2.background_hbrush.lock() {
+                        Ok(mut background_hbrush) => {
+                            // Create the brush if it does not exist
+                            if background_hbrush.is_none() {
+                                HBRUSH::CreateSolidBrush(COLORREF::from_rgb(0x1E, 0x1E, 0x1E))
+                                    .map_or_else(
+                                        |e| {
+                                            eprintln!("CreateSolidBrush failed: {e}");
+                                        },
+                                        |hbrush| {
+                                            // Set the brush in the Arc Mutex
+                                            *background_hbrush = Some(hbrush);
+                                        },
+                                    )
+                            }
 
-                                    return Ok(1);
-                                }
-                                Err(e) => {
-                                    eprintln!("GetClientRect failed: {e}");
+                            // If the brush exists, use it to paint the window background
+                            if let Some(hbrush) = background_hbrush.as_ref() {
+                                match self2.wnd.hwnd().GetClientRect() {
+                                    Ok(rect) => {
+                                        // Set the background color of the window
+                                        erase_bkgnd
+                                            .hdc
+                                            .FillRect(rect, hbrush)
+                                            .map_err(|e| eprintln!("FillRect failed: {e}"))
+                                            .ok();
+
+                                        return Ok(1);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("GetClientRect failed: {e}");
+                                    }
                                 }
                             }
                         }
                         Err(e) => {
-                            eprintln!("CreateSolidBrush failed: {e}");
+                            eprintln!("Failed to lock background brush mutex: {e}");
                         }
                     }
                 }
 
-                // Call the default window procedure
+                // If not in dark mode, or if an error occurred, call the default window procedure
+                // This will paint the window background with the default system color
                 unsafe { self2.wnd.hwnd().DefWindowProc(erase_bkgnd) };
 
                 Ok(0)
             }
         });
 
-        self.top_toggle.on().nm_click({
+        self.process_list.on_subclass().wm_kill_focus({
+            let self2 = self.clone();
+            move |hwnd| {
+                unsafe { self2.process_list.hwnd().DefSubclassProc(hwnd) };
+                // For some reason, the selected listviewitem's icon is not redrawn when the window loses focus
+                // This is causes the icon's background to remain the focused selection's blue color
+                // Forcing a redraw of the selected listviewitem fixes this
+                if self2.process_list.hwnd().IsWindowVisible() {
+                    self2
+                        .process_list
+                        .hwnd()
+                        .InvalidateRect(None, true)
+                        .map_err(|e| {
+                            eprintln!("Failed to trigger a paint of the process list - InvalidateRect Failed: {e}")
+                        })
+                        .ok();
+                }
+
+                Ok(())
+            }
+        });
+
+        self.process_list.on_subclass().wm_nc_calc_size({
+            let self2 = self.clone();
+            move |calc_size| {
+                // Hide the process list's horizontal scrollbar
+                // The scrollbar would otherwise appear since the process list's column is wider than the listview
+                // Performing this in the WM_NCCALCSIZE handler prevents the scrollbar from flickering
+                self2
+                    .process_list
+                    .hwnd()
+                    .ShowScrollBar(co::SBB::HORZ, false)
+                    .map_err(|e| {
+                        eprintln!(
+                            "Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}"
+                        );
+                    })
+                    .ok();
+
+                Ok(unsafe { self2.process_list.hwnd().DefWindowProc(calc_size) })
+            }
+        });
+
+        self.top_toggle.on_subclass().wm_set_focus({
             let self2 = self.clone();
             move |_| {
-                // Disable highlighting the item by clicking on it (Selecting with the arrow keys still works)
+                // Draw a focus rectangle around the checkbox label
                 self2
-                    .top_toggle
-                    .items()
-                    .get(0)
-                    .select(false)
-                    .map_err(|e| eprintln!("Failed to deselect the top toggle item: {e}"))
+                    .toggle_label_focus_rectangle()
+                    .map_err(|e| {
+                        eprintln!("Failed to draw focus rectangle on checkbox label: {e}");
+                    })
                     .ok();
+
+                Ok(())
+            }
+        });
+
+        self.top_toggle.on_subclass().wm_kill_focus({
+            let self2 = self.clone();
+            move |hwnd| {
+                unsafe { self2.wnd.hwnd().DefSubclassProc(hwnd) };
+                // Erase the focus rectangle around the checkbox label
+                // The focus rectangle is drawn using XOR, so drawing it again will erase it
+                self2
+                    .toggle_label_focus_rectangle()
+                    .map_err(|e| {
+                        eprintln!("Failed to erase focus rectangle on checkbox label: {e}");
+                    })
+                    .ok();
+
+                Ok(())
+            }
+        });
+
+        // Toggle the checkbox state when the label is clicked
+        self.top_label.on().stn_clicked({
+            let self2 = self.clone();
+            move || {
+                // Toggle the checkbox state
+                self2.top_toggle.trigger_click();
+
+                Ok(())
+            }
+        });
+
+        // Double-clicking the label fires a separate event, so handle that too
+        self.top_label.on().stn_dbl_clk({
+            let self2 = self.clone();
+            move || {
+                // Toggle the checkbox state
+                self2.top_toggle.trigger_click();
 
                 Ok(())
             }
@@ -1125,36 +1239,30 @@ impl MyWindow {
                 window.set_style(co::WS::POPUP | co::WS::VISIBLE);
 
                 // Set the window size
-                match AdjustWindowRectEx(rect, window.style(), false, window.style_ex()) {
+                match AdjustWindowRectExForDpi(rect, window.style(), false, window.style_ex(), window.GetDpiForWindow()) {
                     Ok(rct) => rect = rct,
                     Err(e) => {
-                        show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectEx failed with error: {e}"));
+                        show_error_message(&format!("Failed to fullscreenize window - AdjustWindowRectExForDpi failed with error: {e}"));
                         return Ok(());
                     }
                 }
 
                 // Set window to stay on top if checkbox is checked
-                if unsafe {
-                    self2.top_toggle.hwnd().SendMessage(
-                        w::msg::lvm::GetItemState {
-                            index: 0,
-                            mask: co::LVIS::STATEIMAGEMASK
-                        }
-                    )
-                }
-                // 0x1000 = Unchecked, 0x2000 = Checked
-                .raw() & 0x2000 != 0 {
-                    window.set_style_ex(window.style_ex() | co::WS_EX::TOPMOST);
-                }
+                let hwnd_insert_after = if self2.top_toggle.is_checked() {
+                    HwndPlace::Place(w::co::HWND_PLACE::TOPMOST)
+                } else {
+                    HwndPlace::None
+                };
 
                 // Set the window position
                 window
-                    .MoveWindow(
+                    .SetWindowPos(
+                        hwnd_insert_after,
                         POINT::with(rect.left, rect.top),
                         SIZE::with(rect.right - rect.left, rect.bottom - rect.top),
-                        true,
+                        SWP::FRAMECHANGED,
                     )
-                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - MoveWindow failed with error: {e}")))
+                    .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - SetWindowPos failed with error: {e}")))
                     .ok();
 
                 Ok(())
