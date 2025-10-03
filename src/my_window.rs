@@ -63,7 +63,7 @@ impl MyWindow {
                 window_style: co::WS::CHILD | co::WS::VISIBLE,
                 window_ex_style: co::WS_EX::NoValue,
                 ctrl_id: 10000,
-                resize_behavior: (gui::Horz::Resize, gui::Vert::Repos),
+                resize_behavior: (gui::Horz::None, gui::Vert::None),
             },
         );
 
@@ -86,8 +86,6 @@ impl MyWindow {
                     | co::WS::TABSTOP
                     | co::WS::GROUP
                     | co::WS::CLIPSIBLINGS,
-                // Resize horizontally and vertically together with parent window.
-                resize_behavior: (gui::Horz::Resize, gui::Vert::Resize),
                 ..Default::default()
             },
         );
