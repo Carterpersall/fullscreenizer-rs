@@ -17,6 +17,16 @@ use winsafe::{
     HwndPlace, POINT, RECT, SIZE, co, gui,
 };
 
+#[inline(always)]
+fn dpi_scale_val(val: i32, dpi: u32) -> i32 {
+    w::MulDiv(val, dpi as i32, 96)
+}
+
+#[inline(always)]
+fn dpi_scale(val: (i32, i32), dpi: u32) -> (i32, i32) {
+    (dpi_scale_val(val.0, dpi), dpi_scale_val(val.1, dpi))
+}
+
 #[derive(Clone)]
 pub struct MyWindow {
     // Window elements
@@ -174,6 +184,7 @@ impl MyWindow {
                 "Windows Input Experience",
                 "PopupHost",
                 "System tray overflow window.",
+                "Task Switching",
             ]
             .map(String::from),
         );
@@ -220,14 +231,11 @@ impl MyWindow {
     }
 
     fn update_font(&self) {
-        // Get the current DPI
-        let app_dpi = self.app_dpi.load(Ordering::Relaxed);
-
         // Create a new font based on the current DPI
         let font = match w::HFONT::CreateFont(
             SIZE {
                 cx: 0,
-                cy: -w::MulDiv(15, app_dpi as i32, 120),
+                cy: -dpi_scale_val(12, self.app_dpi.load(Ordering::Relaxed)),
             },
             0,
             0,
@@ -396,12 +404,9 @@ impl MyWindow {
         windows: &mut MutexGuard<Vec<w::HWND>>,
         scan_windows: bool,
     ) -> w::AnyResult<()> {
-        // Get the current DPI
-        let dpi = self.app_dpi.load(Ordering::Relaxed) as i32;
-
         // Create an image list to store the icons
         let image_list = HIMAGELIST::Create(
-            SIZE::with(20 * dpi / 120, 20 * dpi / 120),
+            SIZE::from(dpi_scale((16, 16), self.app_dpi.load(Ordering::Relaxed))),
             co::ILC::COLOR32,
             0,
             100,
@@ -713,12 +718,9 @@ impl MyWindow {
         self.wnd.on().wm_get_min_max_info({
             let self2 = self.clone();
             move |min_max| {
-                // Get the current dpi of the window
-                let app_dpi = self2.app_dpi.load(Ordering::Relaxed);
-
                 // Set the minimum size of the window
-                min_max.info.ptMinTrackSize.x = (305 * app_dpi / 120) as i32;
-                min_max.info.ptMinTrackSize.y = (200 * app_dpi / 120) as i32;
+                min_max.info.ptMinTrackSize =
+                    POINT::from(dpi_scale((244, 160), self2.app_dpi.load(Ordering::Relaxed)));
 
                 Ok(())
             }
@@ -756,13 +758,10 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with(
-                            (10 * app_dpi / 120) as i32,
-                            (((29 - 20) * app_dpi / 120) / 2) as i32,
-                        ),
+                        POINT::from(dpi_scale((8, 3), app_dpi)),
                         SIZE::with(
-                            (new_size.right - new_size.left) - (20 * app_dpi / 120) as i32,
-                            (20 * app_dpi / 120) as i32,
+                            (new_size.right - new_size.left) - dpi_scale_val(16, app_dpi),
+                            dpi_scale_val(16, app_dpi),
                         ),
                         SWP::NOZORDER,
                     )
@@ -775,11 +774,10 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with((8 * app_dpi / 120) as i32, (29 * app_dpi / 120) as i32),
+                        POINT::from(dpi_scale((6, 23), app_dpi)),
                         SIZE::with(
-                            (new_size.right - new_size.left) - (16 * app_dpi / 120) as i32,
-                            (new_size.bottom - new_size.top)
-                                - ((29 + 25 + 33 + 20) * app_dpi / 120) as i32,
+                            (new_size.right - new_size.left) - dpi_scale_val(13, app_dpi),
+                            (new_size.bottom - new_size.top) - dpi_scale_val(86, app_dpi)
                         ),
                         SWP::NOZORDER,
                     )
@@ -795,12 +793,10 @@ impl MyWindow {
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with(
-                            (8 * app_dpi / 120) as i32,
-                            (31 * app_dpi / 120) as i32
-                                + ((new_size.bottom - new_size.top)
-                                    - ((29 + 20 + 20 + 33) * app_dpi / 120) as i32),
+                            dpi_scale_val(6, app_dpi),
+                            (new_size.bottom - new_size.top) - dpi_scale_val(57, app_dpi),
                         ),
-                        SIZE::with((20 * app_dpi / 120) as i32, (20 * app_dpi / 120) as i32),
+                        SIZE::from(dpi_scale((16, 16), app_dpi)),
                         SWP::NOZORDER,
                     )
                     .map_err(|e| eprintln!("Failed to resize checkbox - SetWindowPos Failed: {e}"))
@@ -814,12 +810,10 @@ impl MyWindow {
                         HwndPlace::None,
                         POINT::with(
                             // Leave a small gap between the checkbox and the label for the selection box
-                            ((8 + 22) * app_dpi / 120) as i32,
-                            (31 * app_dpi / 120) as i32
-                                + ((new_size.bottom - new_size.top)
-                                    - ((29 + 20 + 20 + 33) * app_dpi / 120) as i32),
+                            dpi_scale_val(24, app_dpi),
+                            (new_size.bottom - new_size.top) - dpi_scale_val(57, app_dpi),
                         ),
-                        SIZE::with((338 * app_dpi / 120) as i32, (20 * app_dpi / 120) as i32),
+                        SIZE::from(dpi_scale((270, 16), app_dpi)),
                         // Don't use the SWP::NOZORDER flag, otherwise the previous frame of the listview may be visible
                         SWP::default(),
                     )
@@ -830,12 +824,12 @@ impl MyWindow {
 
                 // Determine the new size of the buttons
                 let btn_size: SIZE =
-                    if new_size.right - new_size.left >= (381 * app_dpi / 120) as i32 {
-                        SIZE::with((110 * app_dpi / 120) as i32, (33 * app_dpi / 120) as i32)
+                    if new_size.right - new_size.left >= dpi_scale_val(305, app_dpi) {
+                        SIZE::from(dpi_scale((88, 26), app_dpi))
                     } else {
                         SIZE::with(
-                            ((new_size.right - new_size.left) / 3) - 16,
-                            (33 * app_dpi / 120) as i32,
+                            ((new_size.right - new_size.left) / 3) - dpi_scale_val(13, app_dpi),
+                            dpi_scale_val(26, app_dpi),
                         )
                     };
 
@@ -845,8 +839,8 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with(0, new_size.bottom - (40 * app_dpi / 120) as i32),
-                        SIZE::with(new_size.right - new_size.left, (33 * app_dpi / 120) as i32),
+                        POINT::with(0, new_size.bottom - dpi_scale_val(32, app_dpi)),
+                        SIZE::with(new_size.right - new_size.left, dpi_scale_val(26, app_dpi)),
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
@@ -874,7 +868,7 @@ impl MyWindow {
                     .hwnd()
                     .SetWindowPos(
                         HwndPlace::None,
-                        POINT::with((13 * app_dpi / 120) as i32, 0),
+                        POINT::with(dpi_scale_val(10, app_dpi), 0),
                         btn_size,
                         SWP::NOZORDER,
                     )
@@ -888,7 +882,7 @@ impl MyWindow {
                     .SetWindowPos(
                         HwndPlace::None,
                         POINT::with(
-                            new_size.right - btn_size.cx - (13 * app_dpi / 120) as i32,
+                            new_size.right - btn_size.cx - dpi_scale_val(10, app_dpi),
                             0,
                         ),
                         btn_size,
