@@ -289,49 +289,71 @@ impl MyWindow {
         }
     }
 
-    fn enable_dark_mode(&self) {
+    fn set_theme(&self, dark_mode: bool) {
         // Get a handle to the window and process list
         let wnd = self.wnd.hwnd();
         let process_list = self.process_list.hwnd();
 
-        // Enable dark mode on the window
-        wnd.DwmSetWindowAttribute(DwmAttr::UseImmersiveDarkMode(true))
+        let theme = if dark_mode {
+            "DarkMode_Explorer"
+        } else {
+            "Explorer"
+        };
+
+        // Set the theme of the window title bar
+        wnd.DwmSetWindowAttribute(DwmAttr::UseImmersiveDarkMode(dark_mode))
             .map_err(|e| eprintln!("DwmSetWindowAttribute failed: {e}"))
             .ok();
 
-        // Enable dark mode on the elements in the window
-        wnd.SetWindowTheme("DarkMode_Explorer", None)
+        // Set the theme on the elements in the window
+        wnd.SetWindowTheme(theme, None)
             .map_err(|e| eprintln!("SetWindowTheme on window failed: {e}"))
             .ok();
         process_list
-            .SetWindowTheme("DarkMode_Explorer", None)
+            .SetWindowTheme(theme, None)
             .map_err(|e| eprintln!("SetWindowTheme on process list failed: {e}"))
             .ok();
         self.top_toggle
             .hwnd()
-            .SetWindowTheme("DarkMode_Explorer", None)
+            .SetWindowTheme(theme, None)
             .map_err(|e| eprintln!("SetWindowTheme on top toggle failed: {e}"))
             .ok();
         self.refresh_btn
             .hwnd()
-            .SetWindowTheme("DarkMode_Explorer", None)
+            .SetWindowTheme(theme, None)
             .map_err(|e| eprintln!("SetWindowTheme on refresh button failed: {e}"))
             .ok();
         self.help_btn
             .hwnd()
-            .SetWindowTheme("DarkMode_Explorer", None)
+            .SetWindowTheme(theme, None)
             .map_err(|e| eprintln!("SetWindowTheme on help button failed: {e}"))
             .ok();
         self.fullscreenize_btn
             .hwnd()
-            .SetWindowTheme("DarkMode_Explorer", None)
+            .SetWindowTheme(theme, None)
             .map_err(|e| eprintln!("SetWindowTheme on fullscreenize button failed: {e}"))
             .ok();
+
+        let listview_bg_color = if dark_mode {
+            COLORREF::from_rgb(0x3C, 0x3C, 0x3C) // Dark gray
+        } else {
+            COLORREF::from_rgb(0xFF, 0xFF, 0xFF) // White
+        };
+        let wnd_bg_color = if dark_mode {
+            COLORREF::from_rgb(0x1E, 0x1E, 0x1E) // Very dark gray
+        } else {
+            COLORREF::from_rgb(0xF0, 0xF0, 0xF0) // Light gray
+        };
+        let text_color = if dark_mode {
+            COLORREF::from_rgb(0xF0, 0xF0, 0xF0) // Light gray
+        } else {
+            COLORREF::from_rgb(0x00, 0x00, 0x00) // Black
+        };
 
         // Set the background color of the listview
         unsafe {
             process_list.SendMessage(SetBkColor {
-                color: Option::from(COLORREF::from_rgb(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
+                color: Option::from(listview_bg_color),
             })
         }
         .map_err(|e| eprintln!("SetBkColor failed: {e}"))
@@ -340,7 +362,7 @@ impl MyWindow {
         // Set the background color of the elements in the listview
         unsafe {
             process_list.SendMessage(SetTextBkColor {
-                color: Option::from(COLORREF::from_rgb(0x3C, 0x3C, 0x3C)), //0xC4, 0xC4, 0xC4)),
+                color: Option::from(listview_bg_color),
             })
         }
         .map_err(|e| eprintln!("WM_CTLCOLORLISTBOX failed: {e}"))
@@ -349,14 +371,33 @@ impl MyWindow {
         // Set the text color of the elements in the listview
         unsafe {
             process_list.SendMessage(SetTextColor {
-                color: Option::from(COLORREF::from_rgb(0xF0, 0xF0, 0xF0)),
+                color: Option::from(text_color),
             })
         }
         .map_err(|e| eprintln!("SetTextColor failed: {e}"))
         .ok();
+
+        // Set the background brush used to paint the background of the labels
+        match self.background_hbrush.lock() {
+            Ok(mut background_hbrush) => {
+                // Create the brush
+                HBRUSH::CreateSolidBrush(wnd_bg_color).map_or_else(
+                    |e| {
+                        eprintln!("CreateSolidBrush failed: {e}");
+                    },
+                    |hbrush| {
+                        // Set the brush in the Arc Mutex
+                        *background_hbrush = Some(hbrush);
+                    },
+                )
+            }
+            Err(e) => {
+                eprintln!("Failed to lock background brush mutex: {e}");
+            }
+        }
     }
 
-    fn set_system_theme(&self) {
+    fn set_system_theme(&self, initialize: bool) {
         // Check if dark mode is enabled using the registry
         let dark_mode = w::HKEY::CURRENT_USER
             .RegOpenKeyEx(
@@ -383,19 +424,20 @@ impl MyWindow {
                 },
             );
 
+        // Only update the theme if it has changed, or if this is the initial call
+        if !initialize && dark_mode == self.is_dark_mode.load(Ordering::Relaxed) {
+            return;
+        }
+
         // Store the dark mode state
         self.is_dark_mode.store(dark_mode, Ordering::Relaxed);
 
         if dark_mode {
             // Enable dark mode on the window
-            self.enable_dark_mode();
+            self.set_theme(true);
         } else {
-            // Set the listview to use the Explorer theme to make the item selection boxes stretch to the right edge of the window
-            self.process_list
-                .hwnd()
-                .SetWindowTheme("Explorer", None)
-                .map_err(|e| eprintln!("SetWindowTheme failed: {e}"))
-                .ok();
+            // Enable light mode on the window
+            self.set_theme(false);
         }
     }
 
@@ -607,7 +649,7 @@ impl MyWindow {
                 self2.update_font();
 
                 // Set the theme of the window
-                self2.set_system_theme();
+                self2.set_system_theme(true);
 
                 // Refresh the process list
                 self2.refresh_btn.trigger_click();
@@ -657,6 +699,26 @@ impl MyWindow {
                         eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
                     }).ok();
                 }
+
+                Ok(0)
+            }
+        });
+
+        self.wnd.on().wm(co::WM::WININICHANGE, {
+            let self2 = self.clone();
+            move |_| {
+                // Update the current theme
+                self2.set_system_theme(false);
+
+                // Redraw the window background so that the new background color is applied
+                self2
+                    .wnd
+                    .hwnd()
+                    .InvalidateRect(None, true)
+                    .map_err(|e| {
+                        eprintln!("Failed to invalidate window - InvalidateRect Failed: {e}");
+                    })
+                    .ok();
 
                 Ok(0)
             }
@@ -910,8 +972,9 @@ impl MyWindow {
             move |ctl| {
                 // Light mode background color and dark mode text color
                 let mut color = COLORREF::from_rgb(0xF0, 0xF0, 0xF0);
+                let is_dark_mode = self2.is_dark_mode.load(Ordering::Relaxed);
 
-                if self2.is_dark_mode.load(Ordering::Relaxed) {
+                if is_dark_mode {
                     // Set the text color of the label to white
                     let _old_color = ctl
                         .hdc
@@ -930,20 +993,7 @@ impl MyWindow {
 
                 // Set the background color of the label by returning a handle to a brush
                 Ok(match self2.background_hbrush.lock() {
-                    Ok(mut background_hbrush) => {
-                        // Create the brush if it does not exist
-                        if background_hbrush.is_none() {
-                            HBRUSH::CreateSolidBrush(color).map_or_else(
-                                |e| {
-                                    eprintln!("CreateSolidBrush failed: {e}");
-                                },
-                                |hbrush| {
-                                    // Set the brush in the Arc Mutex
-                                    *background_hbrush = Some(hbrush);
-                                },
-                            )
-                        }
-
+                    Ok(background_hbrush) => {
                         // Return a handle to the brush, if it exists
                         background_hbrush
                             .as_ref()
