@@ -441,32 +441,40 @@ impl MyWindow {
                 }
 
                 let icon_id = if use_icons {
-                    // Get the window icon
-                    let icon = match unsafe {
-                        HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
-                            co::WM::GETICON,
-                            co::ICON_SZ::SMALL.raw() as usize,
-                            0,
-                        )) as *mut _)
-                    } {
-                        icon if icon.as_opt().is_some() => icon,
-                        _ => {
-                            // If retrieving the icon failed, try a different method
+                    // Try multiple methods to get the window icon
+                    // - Try each method in order until one returns a valid icon
+                    // - Each method is a closure that takes a &HWND and returns an HICON
+                    // - If no method returns a valid icon, HICON::NULL is used
+                    let icon = unsafe {
+                        [
+                            /* Method 1: WM_GETICON Message */
+                            |hwnd: &w::HWND| {
+                                HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
+                                    co::WM::GETICON,
+                                    co::ICON_SZ::SMALL.raw() as usize,
+                                    0,
+                                )) as *mut _)
+                            },
+                            /* Method 2: Use GetClassLongPtr to get the small icon */
                             // See https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-geticon#remarks
-                            let icon = unsafe {
+                            |hwnd: &w::HWND| {
                                 HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICONSM) as *mut _)
-                            };
-
-                            if icon == HICON::NULL || icon == HICON::INVALID {
-                                // Try retrieving the large icon
-                                unsafe {
-                                    HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICON) as *mut _)
-                                }
-                            } else {
-                                icon
-                            }
-                        }
-                    };
+                            },
+                            /* Method 3: Use GetClassLongPtr to get the large icon */
+                            |hwnd: &w::HWND| {
+                                HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICON) as *mut _)
+                            },
+                        ]
+                    }
+                    .into_iter()
+                    .find_map(|func| match func(&hwnd) {
+                        // If the icon is valid, return it, otherwise continue to the next method
+                        icon if icon != HICON::NULL && icon != HICON::INVALID => Some(icon),
+                        _ => None,
+                    })
+                    // If no method returned a valid icon, return HICON::NULL
+                    // TODO: Implement support for UWP app icons, which are not accessible via the above methods
+                    .unwrap_or(HICON::NULL);
 
                     // Add the icon to the image list
                     match image_list.AddIcon(&icon) {
