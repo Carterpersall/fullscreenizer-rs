@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
 use winsafe::co::SWP;
@@ -10,7 +10,7 @@ use winsafe::guard::{DestroyIconGuard, ImageListDestroyGuard};
 use winsafe::gui::dpi;
 use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
 use winsafe::prelude::{
-    GuiEventsButton, GuiEventsLabel, GuiEventsParent, GuiEventsWindow, GuiWindow, Handle,
+    GuiEventsButton as _, GuiEventsLabel as _, GuiEventsParent as _, GuiEventsWindow as _, GuiWindow as _, Handle as _,
 };
 use winsafe::{
     self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HICON, HIMAGELIST,
@@ -389,7 +389,7 @@ impl MyWindow {
                         // Set the brush in the Arc Mutex
                         *background_hbrush = Some(hbrush);
                     },
-                )
+                );
             }
             Err(e) => {
                 eprintln!("Failed to lock background brush mutex: {e}");
@@ -690,13 +690,13 @@ impl MyWindow {
                     // Force the buttons to repaint
                     // Without this, the buttons are not visible until they are updated by hovering over them
                     self2.refresh_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}")
+                        eprintln!("Failed to trigger a paint of the refresh button - InvalidateRect Failed: {e}");
                     }).ok();
                     self2.help_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}")
+                        eprintln!("Failed to trigger a paint of the help button - InvalidateRect Failed: {e}");
                     }).ok();
                     self2.fullscreenize_btn.hwnd().InvalidateRect(None, true).map_err(|e| {
-                        eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}")
+                        eprintln!("Failed to trigger a paint of the fullscreenize button - InvalidateRect Failed: {e}");
                     }).ok();
                 }
 
@@ -844,7 +844,7 @@ impl MyWindow {
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
-                        eprintln!("Failed to resize process list - SetWindowPos Failed: {e}")
+                        eprintln!("Failed to resize process list - SetWindowPos Failed: {e}");
                     })
                     .ok();
 
@@ -880,7 +880,7 @@ impl MyWindow {
                         SWP::default(),
                     )
                     .map_err(|e| {
-                        eprintln!("Failed to resize label for checkbox - SetWindowPos Failed: {e}")
+                        eprintln!("Failed to resize label for checkbox - SetWindowPos Failed: {e}");
                     })
                     .ok();
 
@@ -906,7 +906,7 @@ impl MyWindow {
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
-                        eprintln!("Failed to resize button canvas - SetWindowPos Failed: {e}")
+                        eprintln!("Failed to resize button canvas - SetWindowPos Failed: {e}");
                     })
                     .ok();
 
@@ -935,7 +935,7 @@ impl MyWindow {
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
-                        eprintln!("Failed to move refresh button - SetWindowPos Failed: {e}")
+                        eprintln!("Failed to move refresh button - SetWindowPos Failed: {e}");
                     })
                     .ok();
                 self2
@@ -951,7 +951,7 @@ impl MyWindow {
                         SWP::NOZORDER,
                     )
                     .map_err(|e| {
-                        eprintln!("Failed to move fullscreenize button - SetWindowPos Failed: {e}")
+                        eprintln!("Failed to move fullscreenize button - SetWindowPos Failed: {e}");
                     })
                     .ok();
 
@@ -1025,7 +1025,7 @@ impl MyWindow {
                                             // Set the brush in the Arc Mutex
                                             *background_hbrush = Some(hbrush);
                                         },
-                                    )
+                                    );
                             }
 
                             // If the brush exists, use it to paint the window background
@@ -1074,7 +1074,7 @@ impl MyWindow {
                         .hwnd()
                         .InvalidateRect(None, true)
                         .map_err(|e| {
-                            eprintln!("Failed to trigger a paint of the process list - InvalidateRect Failed: {e}")
+                            eprintln!("Failed to trigger a paint of the process list - InvalidateRect Failed: {e}");
                         })
                         .ok();
                 }
@@ -1205,21 +1205,15 @@ impl MyWindow {
                 };
 
                 // Lock the window mutex
-                let window = match windows.lock() {
+                let windows = match windows.lock() {
                     Ok(windows) => windows,
-                    Err(e) => {
-                        show_error_message(format!("Failed to fullscreenize window - Mutex lock failed: {e}").as_str());
-                        return Ok(());
-                    }
+                    Err(poisoned) => poisoned.into_inner(),
                 };
 
                 // Get the selected window
-                let window = match window.get(selected_item.index() as usize) {
-                    Some(window) => window,
-                    None => {
-                        show_error_message("Failed to fullscreenize window - Could not get the selected window from the list");
-                        return Ok(());
-                    }
+                let Some(window) = windows.get(selected_item.index() as usize) else {
+                    show_error_message("Failed to fullscreenize window - Could not get the selected window from the list");
+                    return Ok(());
                 };
 
                 // Get the dimensions of the monitor the window is on
