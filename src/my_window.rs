@@ -1,20 +1,21 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
+use winsafe::msg::WndMsg;
+use winsafe::msg::wm::SetFont;
 use std::rc::Rc;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard, RwLock};
 
-use winsafe::co::SWP;
-use winsafe::guard::{DestroyIconGuard, ImageListDestroyGuard};
-use winsafe::gui::dpi;
-use winsafe::msg::lvm::{SetBkColor, SetTextBkColor, SetTextColor};
+use winsafe::co::{BST, CHARSET, CLIP, FW, GCLP, HWND_PLACE, ICON_SZ, ILC, KEY, LVS, LVS_EX, LVSIL, MONITOR, OUT_PRECIS, PITCH, QUALITY, REG_OPTION, SBB, SS, SWP, TDCBF, WM, WS, WS_EX};
+use winsafe::guard::{DeleteObjectGuard, DestroyIconGuard, ImageListDestroyGuard};
+use winsafe::gui::{Button, ButtonOpts, CheckBox, CheckBoxOpts, Horz, Icon, Label, LabelOpts, ListView, ListViewOpts, Vert, WindowMain, WindowMainOpts, dpi};
+use winsafe::msg::lvm::{SetBkColor, SetImageList, SetTextBkColor, SetTextColor};
 use winsafe::prelude::{
     GuiEventsButton as _, GuiEventsLabel as _, GuiEventsParent as _, GuiEventsWindow as _, GuiWindow as _, Handle as _,
 };
 use winsafe::{
-    self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HICON, HIMAGELIST,
-    HwndPlace, POINT, RECT, SIZE, co, gui,
+    self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HFONT, HICON, HIMAGELIST, HKEY, HWND, HwndPlace, IconRes, POINT, RECT, RegistryValue, SIZE
 };
 
 #[inline(always)]
@@ -30,15 +31,15 @@ fn dpi_scale(val: (i32, i32), dpi: u32) -> (i32, i32) {
 #[derive(Clone)]
 pub struct MyWindow {
     // Window elements
-    wnd: gui::WindowMain,
-    label: gui::Label,
-    process_list: gui::ListView,
-    top_toggle: gui::CheckBox,
-    top_label: gui::Label,
-    btn_canvas: gui::Label,
-    refresh_btn: gui::Button,
-    help_btn: gui::Button,
-    fullscreenize_btn: gui::Button,
+    wnd: WindowMain,
+    label: Label,
+    process_list: ListView,
+    top_toggle: CheckBox,
+    top_label: Label,
+    btn_canvas: Label,
+    refresh_btn: Button,
+    help_btn: Button,
+    fullscreenize_btn: Button,
 
     // Settings
     is_dark_mode: Arc<AtomicBool>,
@@ -46,72 +47,72 @@ pub struct MyWindow {
     excluded_apps: Arc<[String]>,
 
     // Shared resources
-    app_font: Rc<RwLock<Option<w::guard::DeleteObjectGuard<w::HFONT>>>>,
+    app_font: Rc<RwLock<Option<DeleteObjectGuard<HFONT>>>>,
     app_dpi: Arc<AtomicU32>,
-    background_hbrush: Arc<Mutex<Option<w::guard::DeleteObjectGuard<w::HBRUSH>>>>,
-    imagelist: Arc<Mutex<Option<w::guard::ImageListDestroyGuard>>>,
-    window_icons: Arc<Mutex<Vec<w::guard::DestroyIconGuard>>>,
+    background_hbrush: Arc<Mutex<Option<DeleteObjectGuard<HBRUSH>>>>,
+    imagelist: Arc<Mutex<Option<ImageListDestroyGuard>>>,
+    window_icons: Arc<Mutex<Vec<DestroyIconGuard>>>,
 }
 
 impl MyWindow {
     pub fn new() -> Self {
-        let wnd = gui::WindowMain::new(gui::WindowMainOpts {
+        let wnd = WindowMain::new(WindowMainOpts {
             title: "Fullscreenizer",
-            class_icon: gui::Icon::Id(101),
+            class_icon: Icon::Id(101),
             size: dpi(305, 400),
-            style: co::WS::OVERLAPPEDWINDOW | co::WS::CLIPCHILDREN,
+            style: WS::OVERLAPPEDWINDOW | WS::CLIPCHILDREN,
             ..Default::default()
         });
 
-        let label = gui::Label::new(
+        let label = Label::new(
             &wnd,
-            gui::LabelOpts {
+            LabelOpts {
                 text: "Toplevel windows:",
                 position: dpi(10, 9),
                 size: dpi(200, 20),
-                control_style: co::SS::LEFTNOWORDWRAP,
-                window_style: co::WS::CHILD | co::WS::VISIBLE,
-                window_ex_style: co::WS_EX::NoValue,
+                control_style: SS::LEFTNOWORDWRAP,
+                window_style: WS::CHILD | WS::VISIBLE,
+                window_ex_style: WS_EX::NoValue,
                 ctrl_id: 10000,
-                resize_behavior: (gui::Horz::None, gui::Vert::None),
+                resize_behavior: (Horz::None, Vert::None),
             },
         );
 
-        let process_list = gui::ListView::new(
+        let process_list = ListView::new(
             &wnd,
-            gui::ListViewOpts {
+            ListViewOpts {
                 position: dpi(8, 29),
                 size: dpi(289, 307),
                 // Make the single column very wide, so that the end of the column is never visible
                 columns: &[("", 32000)],
-                control_style: co::LVS::NOSORTHEADER
-                    | co::LVS::SHOWSELALWAYS
-                    | co::LVS::NOCOLUMNHEADER
-                    | co::LVS::NOLABELWRAP
-                    | co::LVS::SINGLESEL
-                    | co::LVS::REPORT,
-                control_ex_style: co::LVS_EX::DOUBLEBUFFER,
-                window_style: co::WS::CHILD
-                    | co::WS::VISIBLE
-                    | co::WS::TABSTOP
-                    | co::WS::GROUP
-                    | co::WS::CLIPSIBLINGS,
+                control_style: LVS::NOSORTHEADER
+                    | LVS::SHOWSELALWAYS
+                    | LVS::NOCOLUMNHEADER
+                    | LVS::NOLABELWRAP
+                    | LVS::SINGLESEL
+                    | LVS::REPORT,
+                control_ex_style: LVS_EX::DOUBLEBUFFER,
+                window_style: WS::CHILD
+                    | WS::VISIBLE
+                    | WS::TABSTOP
+                    | WS::GROUP
+                    | WS::CLIPSIBLINGS,
                 ..Default::default()
             },
         );
 
         // Checkbox to toggle the "stay on top" flag
-        let top_toggle = gui::CheckBox::new(
+        let top_toggle = CheckBox::new(
             &wnd,
-            gui::CheckBoxOpts {
+            CheckBoxOpts {
                 position: dpi(8, 342),
                 size: dpi(20, 20),
-                window_style: co::WS::CHILD
-                    | co::WS::VISIBLE
-                    | co::WS::TABSTOP
-                    | co::WS::GROUP
-                    | co::WS::CLIPSIBLINGS,
-                check_state: co::BST::UNCHECKED,
+                window_style: WS::CHILD
+                    | WS::VISIBLE
+                    | WS::TABSTOP
+                    | WS::GROUP
+                    | WS::CLIPSIBLINGS,
+                check_state: BST::UNCHECKED,
                 ..Default::default()
             },
         );
@@ -119,53 +120,53 @@ impl MyWindow {
         // Label for the top_toggle checkbox
         // While setting the text of the checkbox can be done, the resulting text's color cannot be changed
         // Therefore, a label is used instead
-        let top_label = gui::Label::new(
+        let top_label = Label::new(
             &wnd,
-            gui::LabelOpts {
+            LabelOpts {
                 text: "Apply \"stay on top\" flag to avoid taskbar flickering",
                 position: dpi(32, 342),
                 size: dpi(338, 20),
-                control_style: co::SS::LEFTNOWORDWRAP | co::SS::NOTIFY,
-                window_style: co::WS::CHILD | co::WS::VISIBLE,
+                control_style: SS::LEFTNOWORDWRAP | SS::NOTIFY,
+                window_style: WS::CHILD | WS::VISIBLE,
                 ..Default::default()
             },
         );
 
         // Label that will be the parent of the buttons
         // This will allow for the buttons' undrawn background color to be configured
-        let btn_canvas = gui::Label::new(
+        let btn_canvas = Label::new(
             &wnd,
-            gui::LabelOpts {
+            LabelOpts {
                 text: "",
                 position: dpi(8, 360),
                 size: dpi(290, 40),
-                window_style: co::WS::CHILD | co::WS::VISIBLE | co::WS::CLIPSIBLINGS,
-                window_ex_style: co::WS_EX::CONTROLPARENT,
+                window_style: WS::CHILD | WS::VISIBLE | WS::CLIPSIBLINGS,
+                window_ex_style: WS_EX::CONTROLPARENT,
                 ..Default::default()
             },
         );
 
-        let refresh_btn = gui::Button::new(
+        let refresh_btn = Button::new(
             &wnd,
-            gui::ButtonOpts {
+            ButtonOpts {
                 text: "&Refresh",
                 position: dpi(13, 368),
                 ..Default::default()
             },
         );
 
-        let help_btn = gui::Button::new(
+        let help_btn = Button::new(
             &wnd,
-            gui::ButtonOpts {
+            ButtonOpts {
                 text: "&Help",
                 position: dpi(108, 368),
                 ..Default::default()
             },
         );
 
-        let fullscreenize_btn = gui::Button::new(
+        let fullscreenize_btn = Button::new(
             &wnd,
-            gui::ButtonOpts {
+            ButtonOpts {
                 text: "&Fullscreenize",
                 position: dpi(202, 368),
                 ..Default::default()
@@ -232,22 +233,22 @@ impl MyWindow {
 
     fn update_font(&self) {
         // Create a new font based on the current DPI
-        let font = match w::HFONT::CreateFont(
+        let font = match HFONT::CreateFont(
             SIZE {
                 cx: 0,
                 cy: -dpi_scale_val(12, self.app_dpi.load(Ordering::Relaxed)),
             },
             0,
             0,
-            co::FW::MEDIUM,
+            FW::MEDIUM,
             false,
             false,
             false,
-            co::CHARSET::DEFAULT,
-            co::OUT_PRECIS::DEFAULT,
-            co::CLIP::DEFAULT_PRECIS,
-            co::QUALITY::DEFAULT,
-            co::PITCH::DEFAULT,
+            CHARSET::DEFAULT,
+            OUT_PRECIS::DEFAULT,
+            CLIP::DEFAULT_PRECIS,
+            QUALITY::DEFAULT,
+            PITCH::DEFAULT,
             "Segoe UI",
         ) {
             Ok(hfont) => hfont,
@@ -259,25 +260,25 @@ impl MyWindow {
 
         // Update the font for all controls
         unsafe {
-            self.label.hwnd().SendMessage(w::msg::wm::SetFont {
+            self.label.hwnd().SendMessage(SetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
-            self.top_label.hwnd().SendMessage(w::msg::wm::SetFont {
+            self.top_label.hwnd().SendMessage(SetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
-            self.refresh_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+            self.refresh_btn.hwnd().SendMessage(SetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
-            self.help_btn.hwnd().SendMessage(w::msg::wm::SetFont {
+            self.help_btn.hwnd().SendMessage(SetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
             self.fullscreenize_btn
                 .hwnd()
-                .SendMessage(w::msg::wm::SetFont {
+                .SendMessage(SetFont {
                     hfont: font.raw_copy(),
                     redraw: true,
                 });
@@ -399,11 +400,11 @@ impl MyWindow {
 
     fn set_system_theme(&self, initialize: bool) {
         // Check if dark mode is enabled using the registry
-        let dark_mode = w::HKEY::CURRENT_USER
+        let dark_mode = HKEY::CURRENT_USER
             .RegOpenKeyEx(
                 Some("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
-                co::REG_OPTION::default(),
-                co::KEY::READ,
+                REG_OPTION::default(),
+                KEY::READ,
             )
             .and_then(|key| key.RegQueryValueEx(Some("AppsUseLightTheme")))
             .map_or_else(
@@ -415,7 +416,7 @@ impl MyWindow {
                 |result| {
                     match result {
                         // If the value is 1, light mode is enabled
-                        w::RegistryValue::Dword(value) => value != 1,
+                        RegistryValue::Dword(value) => value != 1,
                         _ => {
                             // Default to light mode
                             false
@@ -443,13 +444,13 @@ impl MyWindow {
 
     fn refresh_process_list(
         &self,
-        windows: &mut MutexGuard<Vec<w::HWND>>,
+        windows: &mut MutexGuard<Vec<HWND>>,
         scan_windows: bool,
     ) -> w::AnyResult<()> {
         // Create an image list to store the icons
         let image_list = HIMAGELIST::Create(
             SIZE::from(dpi_scale((16, 16), self.app_dpi.load(Ordering::Relaxed))),
-            co::ILC::COLOR32,
+            ILC::COLOR32,
             0,
             100,
         )
@@ -471,7 +472,7 @@ impl MyWindow {
                 window_icons.clear();
             }
 
-            EnumWindows(|hwnd: w::HWND| -> bool {
+            EnumWindows(|hwnd: HWND| -> bool {
                 // Skip invisible windows
                 if !hwnd.IsWindowVisible() {
                     return true;
@@ -493,21 +494,21 @@ impl MyWindow {
                     let icon = unsafe {
                         [
                             /* Method 1: WM_GETICON Message */
-                            |hwnd: &w::HWND| {
-                                HICON::from_ptr(hwnd.SendMessage(w::msg::WndMsg::new(
-                                    co::WM::GETICON,
-                                    co::ICON_SZ::SMALL.raw() as usize,
+                            |hwnd: &HWND| {
+                                HICON::from_ptr(hwnd.SendMessage(WndMsg::new(
+                                    WM::GETICON,
+                                    ICON_SZ::SMALL.raw() as usize,
                                     0,
                                 )) as *mut _)
                             },
                             /* Method 2: Use GetClassLongPtr to get the small icon */
                             // See https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-geticon#remarks
-                            |hwnd: &w::HWND| {
-                                HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICONSM) as *mut _)
+                            |hwnd: &HWND| {
+                                HICON::from_ptr(hwnd.GetClassLongPtr(GCLP::HICONSM) as *mut _)
                             },
                             /* Method 3: Use GetClassLongPtr to get the large icon */
-                            |hwnd: &w::HWND| {
-                                HICON::from_ptr(hwnd.GetClassLongPtr(co::GCLP::HICON) as *mut _)
+                            |hwnd: &HWND| {
+                                HICON::from_ptr(hwnd.GetClassLongPtr(GCLP::HICON) as *mut _)
                             },
                         ]
                     }
@@ -577,13 +578,13 @@ impl MyWindow {
         let _ = unsafe {
             self.process_list
                 .hwnd()
-                .SendMessage(w::msg::lvm::SetImageList {
+                .SendMessage(SetImageList {
                     himagelist: if use_icons {
                         Some(image_list.raw_copy())
                     } else {
                         None
                     },
-                    kind: co::LVSIL::SMALL,
+                    kind: LVSIL::SMALL,
                 })
         };
 
@@ -635,7 +636,7 @@ impl MyWindow {
 
     fn events(&self) {
         // Create a vector in a mutex to store the open windows
-        let windows: Arc<Mutex<Vec<w::HWND>>> = Arc::new(Mutex::new(Vec::new()));
+        let windows: Arc<Mutex<Vec<HWND>>> = Arc::new(Mutex::new(Vec::new()));
 
         self.wnd.on().wm_create({
             let self2 = self.clone();
@@ -659,9 +660,9 @@ impl MyWindow {
                     self2
                         .wnd
                         .hwnd()
-                        .PostMessage(w::msg::WndMsg::new(
-                            co::WM::APP,
-                            co::WM::USER.raw() as usize,
+                        .PostMessage(WndMsg::new(
+                            WM::APP,
+                            WM::USER.raw() as usize,
                             0,
                         ))
                         .map_err(|e| {
@@ -678,10 +679,10 @@ impl MyWindow {
         });
 
         // Handle post-creation tasks
-        self.wnd.on().wm(co::WM::APP,{
+        self.wnd.on().wm(WM::APP,{
             let self2 = self.clone();
             move |msg| {
-                if msg.wparam == co::WM::USER.raw() as usize {
+                if msg.wparam == WM::USER.raw() as usize {
                     // Set the canvas as the button's parent
                     self2.refresh_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
                     self2.help_btn.hwnd().SetParent(self2.btn_canvas.hwnd()).ok();
@@ -704,7 +705,7 @@ impl MyWindow {
             }
         });
 
-        self.wnd.on().wm(co::WM::WININICHANGE, {
+        self.wnd.on().wm(WM::WININICHANGE, {
             let self2 = self.clone();
             move |_| {
                 // Update the current theme
@@ -726,13 +727,13 @@ impl MyWindow {
 
         // Receive the button click events and forward them to the main window
         // This is necessary to ensure that the main window receives the button click events
-        self.btn_canvas.on_subclass().wm(w::co::WM::COMMAND, {
+        self.btn_canvas.on_subclass().wm(WM::COMMAND, {
             let self2 = self.clone();
             move |a| {
                 // Forward the message to the main window
                 unsafe {
-                    self2.wnd.hwnd().SendMessage(w::msg::WndMsg::new(
-                        co::WM::COMMAND,
+                    self2.wnd.hwnd().SendMessage(WndMsg::new(
+                        WM::COMMAND,
                         a.wparam,
                         a.lparam,
                     ));
@@ -742,10 +743,10 @@ impl MyWindow {
         });
 
         // Handle DPI changes
-        self.wnd.on().wm(co::WM::DPICHANGED, {
+        self.wnd.on().wm(WM::DPICHANGED, {
             let self2 = self.clone();
             let windows = windows.clone();
-            move |dpi_changed: w::msg::WndMsg| {
+            move |dpi_changed: WndMsg| {
                 // Store the new DPI of the window
                 // LOWORD and HIWORD of the wParam contains the X and Y DPI values, which should be the same
                 self2
@@ -794,7 +795,7 @@ impl MyWindow {
                 // Get the current dpi of the window
                 let app_dpi = self2.app_dpi.load(Ordering::Relaxed);
 
-                let top_label_focused = w::HWND::GetFocus().map_or_else(|| false, |hwnd| {
+                let top_label_focused = HWND::GetFocus().map_or_else(|| false, |hwnd| {
                     &hwnd == self2.top_toggle.hwnd()
                 });
 
@@ -956,7 +957,7 @@ impl MyWindow {
                     .ok();
 
                 // Check if the checkbox has focus
-                if let Some(hwnd) = w::HWND::GetFocus() && &hwnd == self2.top_toggle.hwnd() {
+                if let Some(hwnd) = HWND::GetFocus() && &hwnd == self2.top_toggle.hwnd() {
                     // Redraw the focus rectangle around the checkbox at its new position
                     self2.toggle_label_focus_rectangle().map_err(|e| {
                         eprintln!("Failed to draw focus rectangle around stay on top toggle's label: {e}");
@@ -1092,7 +1093,7 @@ impl MyWindow {
                 self2
                     .process_list
                     .hwnd()
-                    .ShowScrollBar(co::SBB::HORZ, false)
+                    .ShowScrollBar(SBB::HORZ, false)
                     .map_err(|e| {
                         eprintln!(
                             "Failed to hide horizontal scrollbar - ShowScrollBar Failed: {e}"
@@ -1218,7 +1219,7 @@ impl MyWindow {
 
                 // Get the dimensions of the monitor the window is on
                 let Ok(monitor_info) = window
-                    .MonitorFromWindow(co::MONITOR::DEFAULTTONEAREST)
+                    .MonitorFromWindow(MONITOR::DEFAULTTONEAREST)
                     .GetMonitorInfo()
                     .map_err(|e| show_error_message(&format!("Failed to fullscreenize window - GetMonitorInfo failed with error: {e}")))
                     else {
@@ -1232,7 +1233,7 @@ impl MyWindow {
                 };
 
                 // Set the window style
-                window.set_style(co::WS::POPUP | co::WS::VISIBLE);
+                window.set_style(WS::POPUP | WS::VISIBLE);
 
                 // Set the window size
                 match AdjustWindowRectExForDpi(rect, window.style(), false, window.style_ex(), window.GetDpiForWindow()) {
@@ -1245,7 +1246,7 @@ impl MyWindow {
 
                 // Set window to stay on top if checkbox is checked
                 let hwnd_insert_after = if self2.top_toggle.is_checked() {
-                    HwndPlace::Place(w::co::HWND_PLACE::TOPMOST)
+                    HwndPlace::Place(HWND_PLACE::TOPMOST)
                 } else {
                     HwndPlace::None
                 };
@@ -1274,13 +1275,13 @@ impl MyWindow {
 /// * None
 fn show_error_message(message: &str) {
     // Show a popup window with the error message
-    w::HWND::NULL
+    HWND::NULL
         .TaskDialog(
             Some("Error"),
             None,
             Some(message),
-            co::TDCBF::OK,
-            w::IconRes::Error,
+            TDCBF::OK,
+            IconRes::Error,
         )
         .map_err(|e| eprintln!("TaskDialog failed: {e}"))
         .ok();
@@ -1290,7 +1291,7 @@ fn show_error_message(message: &str) {
 fn show_help_message() {
     // Show a popup window with the help message
     // TODO: Create custom window so dark mode can be implemented
-    w::HWND::NULL
+    HWND::NULL
         .TaskDialog(
             Some("Fullscreenizer"),
             None,
@@ -1302,8 +1303,8 @@ fn show_help_message() {
                  from the desktop resolution may not work properly (or at all) depending on the game.\n\n\n\
                  Made by Carter Persall\n\
                  Based on the program by Kostas \"Bad Sector\" Michalopoulos"),
-            co::TDCBF::OK,
-            w::IconRes::None,
+            TDCBF::OK,
+            IconRes::None,
         )
         .map_err(|e| eprintln!("TaskDialog failed: {e}"))
         .ok();

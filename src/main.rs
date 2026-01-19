@@ -2,7 +2,7 @@
 // Some lints are commented out as they are useful for targeted checks that
 // may not be applicable project-wide (e.g., `absolute_paths`).
 #![warn(
-    //clippy::absolute_paths,
+    clippy::absolute_paths,
     clippy::collection_is_never_read,
     clippy::doc_markdown,
     clippy::indexing_slicing,
