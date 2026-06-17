@@ -1,21 +1,29 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::rc::Rc;
+use std::sync::{Mutex, MutexGuard, RwLock};
 use winsafe::msg::WndMsg;
 use winsafe::msg::wm::SetFont;
-use std::rc::Rc;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Mutex, MutexGuard, RwLock};
 
-use winsafe::co::{BST, CHARSET, CLIP, FW, GCLP, HWND_PLACE, ICON_SZ, ILC, KEY, LVS, LVS_EX, LVSIL, MONITOR, OUT_PRECIS, PITCH, QUALITY, REG_OPTION, SBB, SS, SWP, TDCBF, WM, WS, WS_EX};
+use winsafe::co::{
+    BST, CHARSET, CLIP, FW, GCLP, HWND_PLACE, ICON_SZ, ILC, KEY, LVS, LVS_EX, LVSIL, MONITOR,
+    OUT_PRECIS, PITCH, QUALITY, REG_OPTION, SBB, SS, SWP, TDCBF, WM, WS, WS_EX,
+};
 use winsafe::guard::{DeleteObjectGuard, DestroyIconGuard, ImageListDestroyGuard};
-use winsafe::gui::{Button, ButtonOpts, CheckBox, CheckBoxOpts, Horz, Icon, Label, LabelOpts, ListView, ListViewOpts, Vert, WindowMain, WindowMainOpts, dpi};
+use winsafe::gui::{
+    Button, ButtonOpts, CheckBox, CheckBoxOpts, Horz, Icon, Label, LabelOpts, ListView,
+    ListViewOpts, Vert, WindowMain, WindowMainOpts, dpi,
+};
 use winsafe::msg::lvm::{SetBkColor, SetImageList, SetTextBkColor, SetTextColor};
 use winsafe::prelude::{
-    GuiEventsButton as _, GuiEventsLabel as _, GuiEventsParent as _, GuiEventsWindow as _, GuiWindow as _, Handle as _,
+    GuiEventsButton as _, GuiEventsLabel as _, GuiEventsParent as _, GuiEventsWindow as _,
+    GuiWindow as _, Handle as _,
 };
 use winsafe::{
-    self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HFONT, HICON, HIMAGELIST, HKEY, HWND, HwndPlace, IconRes, POINT, RECT, RegistryValue, SIZE
+    self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HFONT, HICON,
+    HIMAGELIST, HKEY, HWND, HwndPlace, IconRes, POINT, RECT, RegistryValue, SIZE,
 };
 
 #[inline(always)]
@@ -92,11 +100,7 @@ impl MyWindow {
                     | LVS::SINGLESEL
                     | LVS::REPORT,
                 control_ex_style: LVS_EX::DOUBLEBUFFER,
-                window_style: WS::CHILD
-                    | WS::VISIBLE
-                    | WS::TABSTOP
-                    | WS::GROUP
-                    | WS::CLIPSIBLINGS,
+                window_style: WS::CHILD | WS::VISIBLE | WS::TABSTOP | WS::GROUP | WS::CLIPSIBLINGS,
                 ..Default::default()
             },
         );
@@ -107,11 +111,7 @@ impl MyWindow {
             CheckBoxOpts {
                 position: dpi(8, 342),
                 size: dpi(20, 20),
-                window_style: WS::CHILD
-                    | WS::VISIBLE
-                    | WS::TABSTOP
-                    | WS::GROUP
-                    | WS::CLIPSIBLINGS,
+                window_style: WS::CHILD | WS::VISIBLE | WS::TABSTOP | WS::GROUP | WS::CLIPSIBLINGS,
                 check_state: BST::UNCHECKED,
                 ..Default::default()
             },
@@ -276,12 +276,10 @@ impl MyWindow {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
-            self.fullscreenize_btn
-                .hwnd()
-                .SendMessage(SetFont {
-                    hfont: font.raw_copy(),
-                    redraw: true,
-                });
+            self.fullscreenize_btn.hwnd().SendMessage(SetFont {
+                hfont: font.raw_copy(),
+                redraw: true,
+            });
         }
 
         // Store the font in the shared resource so that its lifetime is extended beyond this function
@@ -576,16 +574,14 @@ impl MyWindow {
 
         // Set the image list for the listview
         let _ = unsafe {
-            self.process_list
-                .hwnd()
-                .SendMessage(SetImageList {
-                    himagelist: if use_icons {
-                        Some(image_list.raw_copy())
-                    } else {
-                        None
-                    },
-                    kind: LVSIL::SMALL,
-                })
+            self.process_list.hwnd().SendMessage(SetImageList {
+                himagelist: if use_icons {
+                    Some(image_list.raw_copy())
+                } else {
+                    None
+                },
+                kind: LVSIL::SMALL,
+            })
         };
 
         // Store the image list, dropping the old one
@@ -660,11 +656,7 @@ impl MyWindow {
                     self2
                         .wnd
                         .hwnd()
-                        .PostMessage(WndMsg::new(
-                            WM::APP,
-                            WM::USER.raw() as usize,
-                            0,
-                        ))
+                        .PostMessage(WndMsg::new(WM::APP, WM::USER.raw() as usize, 0))
                         .map_err(|e| {
                             eprintln!("Failed to post WM_APP message - PostMessage Failed: {e}");
                         })
@@ -732,11 +724,10 @@ impl MyWindow {
             move |a| {
                 // Forward the message to the main window
                 unsafe {
-                    self2.wnd.hwnd().SendMessage(WndMsg::new(
-                        WM::COMMAND,
-                        a.wparam,
-                        a.lparam,
-                    ));
+                    self2
+                        .wnd
+                        .hwnd()
+                        .SendMessage(WndMsg::new(WM::COMMAND, a.wparam, a.lparam));
                 }
                 Ok(1)
             }
