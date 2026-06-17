@@ -5,9 +5,8 @@ authors = ["Carter Persall <carterpersll@gmail.com>"]
 edition = "2024"
 
 [dependencies.winsafe]
-#version = "0.0.25"
 git = "https://github.com/rodrigocfd/winsafe.git"
-rev = "5e46ece"
+rev = "dba8e861e736beeef5c9c1749de79767a1dd4936"
 features = [
     "advapi",
     "dwm",
@@ -19,7 +18,7 @@ features = [
 ]
 
 [build-dependencies]
-embed-resource = "3.0.5"
+embed-resource = "3.0.9"
 
 [profile.release]
 lto = "fat"
