@@ -1338,7 +1338,7 @@ fn create_hicon_from_hwnd(hwnd: &w::HWND) -> w::HICON {
 /// Returns Err if any Win32 API call fails unexpectedly.
 fn get_uwp_icon_path_from_hwnd(hwnd: &w::HWND) -> Result<Option<PathBuf>, String> {
     // Get the package full name from the process handle
-    let package_family_name = unsafe {
+    let pfn_wide = unsafe {
         SHGetPropertyStoreForWindow::<IPropertyStore>(windows::Win32::Foundation::HWND(hwnd.ptr()))
             .map_err(|e| format!("SHGetPropertyStoreForWindow failed with error: {e}"))?
             .GetValue(&PKEY_AppUserModel_ID)
@@ -1347,12 +1347,20 @@ fn get_uwp_icon_path_from_hwnd(hwnd: &w::HWND) -> Result<Option<PathBuf>, String
             .Anonymous
             .Anonymous
             .pwszVal
-            .to_string()
-            .map_err(|e| format!("Failed to convert package full name to string: {e}"))?
-            .split("!")
-            .next()
-            .ok_or("Package full name is empty, cannot determine if UWP app")?
-            .to_string()
+    };
+
+    let package_family_name = if pfn_wide.is_null() {
+        return Err("Pointer to package full name is null".to_string());
+    } else {
+        unsafe {
+            pfn_wide
+                .to_string()
+            }
+                .map_err(|e| format!("Failed to convert package full name to string: {e}"))?
+                .split("!")
+                .next()
+                .ok_or("Package full name is empty, cannot determine if UWP app")?
+                .to_string()
     };
 
     let package_full_name = get_package_full_name_from_family_name(&package_family_name)
@@ -1453,20 +1461,16 @@ fn get_uwp_icon_path_from_hwnd(hwnd: &w::HWND) -> Result<Option<PathBuf>, String
                                         .trim_start_matches("scale")
                                 })
                             })
-                    {
-                        if let Ok(size) = size_str.parse::<u32>() {
-                            if size > largest_size {
+                        && let Ok(size) = size_str.parse::<u32>()
+                            && size > largest_size {
                                 largest_size = size;
                                 largest_icon = Some(candidate.clone());
                             }
-                        }
-                    }
                 }
-                if let Some(largest_icon) = largest_icon {
-                    if largest_icon.exists() {
+                if let Some(largest_icon) = largest_icon
+                    && largest_icon.exists() {
                         return Ok(Some(largest_icon));
                     }
-                }
             }
         }
         Err("Icon file does not exist".to_string())
