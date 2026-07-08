@@ -44,7 +44,7 @@ fn dpi_scale(val: (i32, i32), dpi: u32) -> (i32, i32) {
 }
 
 #[derive(Clone)]
-pub struct MyWindow {
+pub(crate) struct MyWindow {
     // Window elements
     wnd: WindowMain,
     label: Label,
@@ -70,7 +70,7 @@ pub struct MyWindow {
 }
 
 impl MyWindow {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let wnd = WindowMain::new(WindowMainOpts {
             title: "Fullscreenizer",
             class_icon: Icon::Id(101),
@@ -234,7 +234,7 @@ impl MyWindow {
         new_self
     }
 
-    pub fn run(&self) -> AnyResult<i32> {
+    pub(crate) fn run(&self) -> AnyResult<i32> {
         self.wnd.run_main(None)
     }
 
@@ -774,7 +774,7 @@ impl MyWindow {
         // Handle DPI changes
         self.wnd.on().wm(WM::DPICHANGED, {
             let self2 = self.clone();
-            let windows = windows.clone();
+            let windows = Arc::clone(&windows);
             move |dpi_changed: Wm| {
                 // Store the new DPI of the window
                 // LOWORD and HIWORD of the wParam contains the X and Y DPI values, which should be the same
@@ -1190,7 +1190,7 @@ impl MyWindow {
 
         self.refresh_btn.on().bn_clicked({
             let self2 = self.clone();
-            let windows = windows.clone();
+            let windows = Arc::clone(&windows);
             move || {
                 // Lock the processes mutex
                 match windows.lock() {
@@ -1394,38 +1394,38 @@ fn create_hicon_from_hwnd(hwnd: &HWND) -> AnyResult<HICON> {
     let mut len = 0;
 
     // First call to GetPackageFullName to get the required buffer size
-    let err = unsafe { GetPackageFullName(proc_handle, &mut len, None) };
+    let err1 = unsafe { GetPackageFullName(proc_handle, &mut len, None) };
     // Expect ERROR_INSUFFICIENT_BUFFER if it is a packaged UWP App
-    if err == APPMODEL_ERROR_NO_PACKAGE {
+    if err1 == APPMODEL_ERROR_NO_PACKAGE {
         return Err("The process is likely not a UWP app (APPMODEL_ERROR_NO_PACKAGE)".into());
-    } else if err != ERROR_INSUFFICIENT_BUFFER || len == 0 {
-        return Err(format!("GetPackageFullName 1 failed with error code: {err:?}").into());
+    } else if err1 != ERROR_INSUFFICIENT_BUFFER || len == 0 {
+        return Err(format!("GetPackageFullName 1 failed with error code: {err1:?}").into());
     }
 
     let mut name_buf = vec![0u16; len as usize];
-    let err =
+    let err2 =
         unsafe { GetPackageFullName(proc_handle, &mut len, Some(PWSTR(name_buf.as_mut_ptr()))) };
-    if err != ERROR_SUCCESS {
-        return Err(format!("GetPackageFullName 2 failed with error code: {err:?}").into());
+    if err2 != ERROR_SUCCESS {
+        return Err(format!("GetPackageFullName 2 failed with error code: {err2:?}").into());
     }
 
     // 5. Get Package Path
     let mut path_len = 0;
-    let err = unsafe { GetPackagePathByFullName(PCWSTR(name_buf.as_ptr()), &mut path_len, None) };
-    if err != ERROR_INSUFFICIENT_BUFFER || path_len == 0 {
-        return Err(format!("GetPackagePathByFullName failed with error code: {err:?}").into());
+    let err3 = unsafe { GetPackagePathByFullName(PCWSTR(name_buf.as_ptr()), &mut path_len, None) };
+    if err3 != ERROR_INSUFFICIENT_BUFFER || path_len == 0 {
+        return Err(format!("GetPackagePathByFullName failed with error code: {err3:?}").into());
     }
 
     let mut path_buf = vec![0u16; path_len as usize];
-    let err = unsafe {
+    let err4 = unsafe {
         GetPackagePathByFullName(
             PCWSTR(name_buf.as_ptr()),
             &mut path_len,
             Some(PWSTR(path_buf.as_mut_ptr())),
         )
     };
-    if err != ERROR_SUCCESS {
-        return Err(format!("GetPackagePathByFullName failed with error code: {err:?}").into());
+    if err4 != ERROR_SUCCESS {
+        return Err(format!("GetPackagePathByFullName failed with error code: {err4:?}").into());
     }
 
     // 6. Locate and read AppxManifest.xml
