@@ -2,26 +2,34 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::{iter, ptr};
+
+use std::fs;
+use std::os::windows::ffi::OsStrExt as _;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Mutex, MutexGuard, RwLock};
-use winsafe::msg::{Wm, WmSetFont, LvmSetBkColor, LvmSetImageList, LvmSetTextBkColor, LvmSetTextColor};
 
 use winsafe::co::{
-    BST, CHARSET, CLIP, FW, GCLP, HWND_PLACE, ICON_SZ, ILC, KEY, LVS, LVS_EX, LVSIL, MONITOR,
-    OUT_PRECIS, PITCH, QUALITY, REG_OPTION, SBB, SS, SWP, TDCBF, WM, WS, WS_EX,
+    BST, CHARSET, CLIP, DWMWA, FW, GCLP, HWND_PLACE, ICON_SZ, ILC, KEY, LVS, LVS_EX, LVSIL,
+    MONITOR, OUT_PRECIS, PITCH, PROCESS, PROCESS_NAME, QUALITY, REG_OPTION, SBB, SS, SWP, TDCBF,
+    WM, WS, WS_EX,
 };
 use winsafe::guard::{DeleteObjectGuard, DestroyIconGuard, ImageListDestroyGuard};
 use winsafe::gui::{
     Button, ButtonOpts, CheckBox, CheckBoxOpts, Horz, Icon, Label, LabelOpts, ListView,
     ListViewOpts, Vert, WindowMain, WindowMainOpts, dpi,
 };
+use winsafe::msg::{
+    LvmSetBkColor, LvmSetImageList, LvmSetTextBkColor, LvmSetTextColor, Wm, WmSetFont,
+};
 use winsafe::prelude::{
     GuiEventsButton as _, GuiEventsLabel as _, GuiEventsParent as _, GuiEventsWindow as _,
     GuiWindow as _, Handle as _,
 };
 use winsafe::{
-    self as w, AdjustWindowRectExForDpi, COLORREF, DwmAttr, EnumWindows, HBRUSH, HFONT, HICON,
-    HIMAGELIST, HKEY, HWND, HwndPlace, IconRes, POINT, RECT, RegistryValue, SIZE,
+    self as w, AdjustWindowRectExForDpi, AnyResult, COLORREF, DwmAttr, EnumWindows, HBRUSH, HFONT,
+    HICON, HIMAGELIST, HKEY, HWND, HwndPlace, IconRes, POINT, RECT, RegistryValue, SIZE,
 };
 
 #[inline(always)]
@@ -482,6 +490,16 @@ impl MyWindow {
                     return true;
                 }
 
+                // Skip cloaked windows (UWP apps that are active but not visible)
+                let cloaked = hwnd.DwmGetWindowAttribute(DWMWA::CLOAKED);
+                if let Ok(DwmAttr::Cloaked(cloaked)) = cloaked && cloaked.raw() != 0 {
+                    return true;
+                }
+                if let Err(e) = cloaked {
+                    eprintln!("DwmGetWindowAttribute failed: {e}");
+                    return true;
+                }
+
                 let icon_id = if use_icons {
                     // Try multiple methods to get the window icon
                     // - Try each method in order until one returns a valid icon
@@ -506,6 +524,27 @@ impl MyWindow {
                             |hwnd: &HWND| {
                                 HICON::from_ptr(hwnd.GetClassLongPtr(GCLP::HICON) as *mut _)
                             },
+                            /* Method 4: Attempt to create an icon from the UWP app's window handle */
+                            |hwnd: &HWND| {
+                                create_hicon_from_hwnd(hwnd).unwrap_or_else(
+                                    |e| {
+                                        // Don't print error if the window is not a UWP app
+                                        if !e.to_string().contains("The process is likely not a UWP app (APPMODEL_ERROR_NO_PACKAGE)") {
+                                            eprintln!("Failed to create HICON from UWP app's window handle: {e}");
+                                        }
+                                        HICON::NULL
+                                    }
+                                )
+                            },
+                            /* Method 5: Attempt to extract icon from the EXE file */
+                            |hwnd: &HWND| {
+                                get_exe_icon(hwnd).unwrap_or_else(
+                                    |e| {
+                                        eprintln!("Failed to get icon from EXE file: {e}");
+                                        HICON::NULL
+                                    }
+                                )
+                            }
                         ]
                     }
                     .into_iter()
@@ -1297,4 +1336,271 @@ fn show_help_message() {
         )
         .map_err(|e| eprintln!("TaskDialog failed: {e}"))
         .ok();
+}
+
+// Imports for the below two functions
+use windows::Win32::Foundation::{
+    APPMODEL_ERROR_NO_PACKAGE, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS, FALSE, HANDLE,
+};
+use windows::Win32::Graphics::GdiPlus::{
+    GdipCreateBitmapFromFile, GdipCreateHICONFromBitmap, GdipDisposeImage, GdiplusShutdown,
+    GdiplusStartup, GdiplusStartupInput,
+};
+use windows::Win32::Storage::Packaging::Appx::{GetPackageFullName, GetPackagePathByFullName};
+use windows::Win32::UI::Shell::ExtractIconExW;
+use windows::core::{PCWSTR, PWSTR};
+
+/// Returns `HICON::NULL` if any step fails.
+fn create_hicon_from_hwnd(hwnd: &w::HWND) -> AnyResult<w::HICON> {
+    // 1. Resolve the actual UWP child window if hosted by Application Frame Host
+    let mut temp_hwnd: Option<HWND> = None;
+    if let Ok(class_name) = hwnd.GetClassName()
+        && class_name == "ApplicationFrameWindow"
+    {
+        hwnd.EnumChildWindows(|child| {
+            if let Ok(child_class) = child.GetClassName()
+                && child_class == "Windows.UI.Core.CoreWindow"
+            {
+                temp_hwnd = Some(child);
+                return false; // Stop enumerating, we found the real app window
+            }
+            true // Continue enumerating
+        });
+
+        if temp_hwnd.is_none() {
+            // Likely a minimized/cloaked UWP app, find the real window
+            temp_hwnd = w::HWND::NULL
+                .FindWindowEx(
+                    None,
+                    w::AtomStr::from_str("Windows.UI.Core.CoreWindow"),
+                    Some(&hwnd.GetWindowText()?),
+                )
+                .map_err(|e| format!("Failed to find cloaked UWP window: {e}"))?;
+        }
+    }
+
+    // 2. Get the Process ID of the window (or the real UWP child window if found)
+    let pid = temp_hwnd.map_or_else(
+        || hwnd.GetWindowThreadProcessId().1,
+        |real_hwnd| real_hwnd.GetWindowThreadProcessId().1,
+    );
+
+    // 3. Open Process using WinSafe
+    let hproc = w::HPROCESS::OpenProcess(PROCESS::QUERY_LIMITED_INFORMATION, false, pid)?;
+
+    // 4. Get Package Full Name
+    let proc_handle = HANDLE(hproc.ptr());
+    let mut len = 0;
+
+    // First call to GetPackageFullName to get the required buffer size
+    let err = unsafe { GetPackageFullName(proc_handle, &mut len, None) };
+    // Expect ERROR_INSUFFICIENT_BUFFER if it is a packaged UWP App
+    if err == APPMODEL_ERROR_NO_PACKAGE {
+        return Err("The process is likely not a UWP app (APPMODEL_ERROR_NO_PACKAGE)".into());
+    } else if err != ERROR_INSUFFICIENT_BUFFER || len == 0 {
+        return Err(format!("GetPackageFullName 1 failed with error code: {err:?}").into());
+    }
+
+    let mut name_buf = vec![0u16; len as usize];
+    let err =
+        unsafe { GetPackageFullName(proc_handle, &mut len, Some(PWSTR(name_buf.as_mut_ptr()))) };
+    if err != ERROR_SUCCESS {
+        return Err(format!("GetPackageFullName 2 failed with error code: {err:?}").into());
+    }
+
+    // 5. Get Package Path
+    let mut path_len = 0;
+    let err = unsafe { GetPackagePathByFullName(PCWSTR(name_buf.as_ptr()), &mut path_len, None) };
+    if err != ERROR_INSUFFICIENT_BUFFER || path_len == 0 {
+        return Err(format!("GetPackagePathByFullName failed with error code: {err:?}").into());
+    }
+
+    let mut path_buf = vec![0u16; path_len as usize];
+    let err = unsafe {
+        GetPackagePathByFullName(
+            PCWSTR(name_buf.as_ptr()),
+            &mut path_len,
+            Some(PWSTR(path_buf.as_mut_ptr())),
+        )
+    };
+    if err != ERROR_SUCCESS {
+        return Err(format!("GetPackagePathByFullName failed with error code: {err:?}").into());
+    }
+
+    // 6. Locate and read AppxManifest.xml
+    let package_path_str = String::from_utf16_lossy(
+        path_buf
+            .get(..path_len as usize - 1)
+            .ok_or("Failed to get package path slice")?,
+    );
+    let package_path = PathBuf::from(&package_path_str);
+    let manifest_content = fs::read_to_string(package_path.join("AppxManifest.xml"))?;
+
+    // 7. Extract the Logo Path (Check Square44x44Logo first, fallback to generic Logo)
+    let logo_rel_path = if let Some(start) = manifest_content.find("Square44x44Logo=\"") {
+        let start_quote = start + "Square44x44Logo=\"".len();
+        let end_quote = manifest_content[start_quote..]
+            .find('"')
+            .ok_or("Failed to find closing quote for Square44x44Logo")?;
+        &manifest_content[start_quote..start_quote + end_quote]
+    } else if let Some(start) = manifest_content.find("Logo=\"") {
+        let start_quote = start + "Logo=\"".len();
+        let end_quote = manifest_content[start_quote..]
+            .find('"')
+            .ok_or("Failed to find closing quote for Logo")?;
+        &manifest_content[start_quote..start_quote + end_quote]
+    } else {
+        return Err("Failed to find logo path in AppxManifest.xml".into());
+    };
+
+    // 8. Find actual PNG (UWP uses MRT which scales images like .scale-100.png)
+    let logo_full = package_path.join(logo_rel_path.replace('\\', "/"));
+    let logo_dir = logo_full.parent().ok_or("Failed to get logo directory")?;
+    let logo_stem = logo_full
+        .file_stem()
+        .ok_or("Failed to get logo stem")?
+        .to_str()
+        .ok_or("Failed to convert logo stem to string")?;
+    let logo_ext = logo_full
+        .extension()
+        .ok_or("Failed to get logo extension")?
+        .to_str()
+        .ok_or("Failed to convert logo extension to string")?;
+
+    let mut actual_logo_path = None;
+    if let Ok(mut entries) =
+        fs::read_dir(logo_dir).map(|e| e.flatten().collect::<Vec<fs::DirEntry>>())
+    {
+        let mut best_match_score = -1;
+        // Sort entries by path length to prioritize shorter paths, which are more likely to be the correct logo file (e.g., "logo.scale-100.png" over "logo.contrast-black_scale-100.png")
+        entries.sort_by_key(|e| e.path().as_os_str().len());
+        for entry in entries {
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let file_name_lower = file_name.to_lowercase();
+            let logo_stem_lower = logo_stem.to_lowercase();
+            let logo_ext_lower = logo_ext.to_lowercase();
+
+            if file_name_lower.starts_with(&logo_stem_lower)
+                && file_name_lower.ends_with(&logo_ext_lower)
+            {
+                let mut score = 0;
+                if file_name_lower.contains("scale-100") {
+                    score += 2;
+                }
+                if file_name_lower.contains("targetsize-44") {
+                    score += 2;
+                }
+                if file_name_lower.contains("altform-unplated") {
+                    score -= 1;
+                }
+
+                if score > best_match_score {
+                    best_match_score = score;
+                    actual_logo_path = Some(entry.path());
+                }
+            }
+        }
+    }
+    let final_path = actual_logo_path.ok_or("Failed to find actual logo path")?;
+
+    // 9. Load PNG as an HICON using Windows GDI+
+    let mut token = 0;
+    let input = GdiplusStartupInput {
+        GdiplusVersion: 1,
+        DebugEventCallback: 0,
+        SuppressBackgroundThread: FALSE,
+        SuppressExternalCodecs: FALSE,
+    };
+
+    unsafe {
+        // Startup GDI+
+        let _ = GdiplusStartup(&mut token, &input as *const _, ptr::null_mut());
+    }
+
+    let w_path: Vec<u16> = final_path
+        .as_os_str()
+        .encode_wide()
+        .chain(iter::once(0))
+        .collect();
+    let mut bitmap = ptr::null_mut();
+    let hicon = w::HICON::NULL;
+
+    unsafe {
+        // Create Bitmap from PNG, create HICON from Bitmap, dispose Bitmap
+        let _ = GdipCreateBitmapFromFile(PCWSTR(w_path.as_ptr()), &mut bitmap);
+        if !bitmap.is_null() {
+            let _ = GdipCreateHICONFromBitmap(bitmap, hicon.ptr() as *mut _);
+            let _ = GdipDisposeImage(bitmap as *mut _);
+        }
+        // Shutdown GDI+
+        GdiplusShutdown(token);
+    }
+
+    if hicon == w::HICON::INVALID || hicon == w::HICON::NULL {
+        return Err("Failed to create HICON from PNG".into());
+    }
+
+    // Return the HICON
+    Ok(hicon)
+}
+
+fn get_exe_icon(hwnd: &w::HWND) -> AnyResult<w::HICON> {
+    // 1. Get process ID
+    let pid = hwnd.GetWindowThreadProcessId().1;
+
+    // 2. Open the process
+    let hproc = w::HPROCESS::OpenProcess(PROCESS::QUERY_LIMITED_INFORMATION, false, pid)?;
+
+    // 3. Get the executable path
+    let exe_path = hproc.QueryFullProcessImageName(PROCESS_NAME::WIN32)?;
+
+    // 4. Extract icons from the .exe file
+
+    // Get the number of icons in the EXE file
+    let num_icons = unsafe {
+        ExtractIconExW(
+            PCWSTR(w::WString::from_str(&exe_path).as_ptr()),
+            -1,
+            None,
+            None,
+            0,
+        )
+    };
+
+    // Initialize slices to hold the small and large icons
+    let mut small_icons = iter::repeat_with(|| unsafe { DestroyIconGuard::new(w::HICON::NULL) })
+        .take(num_icons as usize)
+        .collect::<Box<_>>();
+    let mut large_icons = iter::repeat_with(|| unsafe { DestroyIconGuard::new(w::HICON::NULL) })
+        .take(num_icons as usize)
+        .collect::<Box<_>>();
+
+    // Extract all icons from the EXE file
+    // Note: While it would be easier to just extract the first icon,
+    //       it is theoretically possible for the first icon to be invalid and subsequent icons to be valid,
+    //       so we extract all icons and return the first valid one
+    let extracted = unsafe {
+        ExtractIconExW(
+            PCWSTR(w::WString::from_str(&exe_path).as_ptr()),
+            0,
+            Some(large_icons.as_mut_ptr() as *mut _),
+            Some(small_icons.as_mut_ptr() as *mut _),
+            num_icons,
+        )
+    };
+
+    // 5. Return the first valid icon
+    if extracted > 0 {
+        // Iterate through the extracted icons and return the first valid one
+        for (small_icon, large_icon) in small_icons.iter_mut().zip(large_icons.iter_mut()) {
+            // Prefer small icon, fallback to large icon
+            if **small_icon != w::HICON::INVALID && **small_icon != w::HICON::NULL {
+                return Ok(small_icon.leak());
+            } else if **large_icon != w::HICON::INVALID && **large_icon != w::HICON::NULL {
+                return Ok(large_icon.leak());
+            }
+        }
+    }
+
+    Err(format!("Failed to extract icon from EXE: {exe_path}").into())
 }
