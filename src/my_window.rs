@@ -28,13 +28,14 @@ use winsafe::prelude::{
     GuiWindow as _, Handle as _,
 };
 use winsafe::{
-    self as w, AdjustWindowRectExForDpi, AnyResult, COLORREF, DwmAttr, EnumWindows, HBRUSH, HFONT,
-    HICON, HIMAGELIST, HKEY, HWND, HwndPlace, IconRes, POINT, RECT, RegistryValue, SIZE,
+    AdjustWindowRectExForDpi, AnyResult, AtomStr, COLORREF, DwmAttr, EnumWindows, HBRUSH, HFONT,
+    HICON, HIMAGELIST, HKEY, HPROCESS, HWND, HwndPlace, IconRes, MulDiv, POINT, RECT,
+    RegistryValue, SIZE, WString,
 };
 
 #[inline(always)]
 fn dpi_scale_val(val: i32, dpi: u32) -> i32 {
-    w::MulDiv(val, dpi as i32, 96)
+    MulDiv(val, dpi as i32, 96)
 }
 
 #[inline(always)]
@@ -233,7 +234,7 @@ impl MyWindow {
         new_self
     }
 
-    pub fn run(&self) -> w::AnyResult<i32> {
+    pub fn run(&self) -> AnyResult<i32> {
         self.wnd.run_main(None)
     }
 
@@ -450,7 +451,7 @@ impl MyWindow {
         &self,
         windows: &mut MutexGuard<Vec<HWND>>,
         scan_windows: bool,
-    ) -> w::AnyResult<()> {
+    ) -> AnyResult<()> {
         // Create an image list to store the icons
         let image_list = HIMAGELIST::Create(
             SIZE::from(dpi_scale((16, 16), self.app_dpi.load(Ordering::Relaxed))),
@@ -673,7 +674,7 @@ impl MyWindow {
 
         self.wnd.on().wm_create({
             let self2 = self.clone();
-            move |create| -> w::AnyResult<i32> {
+            move |create| -> AnyResult<i32> {
                 // Store the current DPI
                 self2
                     .app_dpi
@@ -819,7 +820,7 @@ impl MyWindow {
 
         self.wnd.on().wm_size({
             let self2 = self.clone();
-            move |size| -> w::AnyResult<()> {
+            move |size| -> AnyResult<()> {
                 // Get the current dpi of the window
                 let app_dpi = self2.app_dpi.load(Ordering::Relaxed);
 
@@ -1038,7 +1039,7 @@ impl MyWindow {
 
         self.wnd.on().wm_erase_bkgnd({
             let self2 = self.clone();
-            move |erase_bkgnd| -> w::AnyResult<i32> {
+            move |erase_bkgnd| -> AnyResult<i32> {
                 // Set the background color of the window in dark mode
                 if self2.is_dark_mode.load(Ordering::Relaxed) {
                     match self2.background_hbrush.lock() {
@@ -1351,7 +1352,7 @@ use windows::Win32::UI::Shell::ExtractIconExW;
 use windows::core::{PCWSTR, PWSTR};
 
 /// Returns `HICON::NULL` if any step fails.
-fn create_hicon_from_hwnd(hwnd: &w::HWND) -> AnyResult<w::HICON> {
+fn create_hicon_from_hwnd(hwnd: &HWND) -> AnyResult<HICON> {
     // 1. Resolve the actual UWP child window if hosted by Application Frame Host
     let mut temp_hwnd: Option<HWND> = None;
     if let Ok(class_name) = hwnd.GetClassName()
@@ -1369,10 +1370,10 @@ fn create_hicon_from_hwnd(hwnd: &w::HWND) -> AnyResult<w::HICON> {
 
         if temp_hwnd.is_none() {
             // Likely a minimized/cloaked UWP app, find the real window
-            temp_hwnd = w::HWND::NULL
+            temp_hwnd = HWND::NULL
                 .FindWindowEx(
                     None,
-                    w::AtomStr::from_str("Windows.UI.Core.CoreWindow"),
+                    AtomStr::from_str("Windows.UI.Core.CoreWindow"),
                     Some(&hwnd.GetWindowText()?),
                 )
                 .map_err(|e| format!("Failed to find cloaked UWP window: {e}"))?;
@@ -1386,7 +1387,7 @@ fn create_hicon_from_hwnd(hwnd: &w::HWND) -> AnyResult<w::HICON> {
     );
 
     // 3. Open Process using WinSafe
-    let hproc = w::HPROCESS::OpenProcess(PROCESS::QUERY_LIMITED_INFORMATION, false, pid)?;
+    let hproc = HPROCESS::OpenProcess(PROCESS::QUERY_LIMITED_INFORMATION, false, pid)?;
 
     // 4. Get Package Full Name
     let proc_handle = HANDLE(hproc.ptr());
@@ -1523,7 +1524,7 @@ fn create_hicon_from_hwnd(hwnd: &w::HWND) -> AnyResult<w::HICON> {
         .chain(iter::once(0))
         .collect();
     let mut bitmap = ptr::null_mut();
-    let hicon = w::HICON::NULL;
+    let hicon = HICON::NULL;
 
     unsafe {
         // Create Bitmap from PNG, create HICON from Bitmap, dispose Bitmap
@@ -1536,7 +1537,7 @@ fn create_hicon_from_hwnd(hwnd: &w::HWND) -> AnyResult<w::HICON> {
         GdiplusShutdown(token);
     }
 
-    if hicon == w::HICON::INVALID || hicon == w::HICON::NULL {
+    if hicon == HICON::INVALID || hicon == HICON::NULL {
         return Err("Failed to create HICON from PNG".into());
     }
 
@@ -1544,12 +1545,12 @@ fn create_hicon_from_hwnd(hwnd: &w::HWND) -> AnyResult<w::HICON> {
     Ok(hicon)
 }
 
-fn get_exe_icon(hwnd: &w::HWND) -> AnyResult<w::HICON> {
+fn get_exe_icon(hwnd: &HWND) -> AnyResult<HICON> {
     // 1. Get process ID
     let pid = hwnd.GetWindowThreadProcessId().1;
 
     // 2. Open the process
-    let hproc = w::HPROCESS::OpenProcess(PROCESS::QUERY_LIMITED_INFORMATION, false, pid)?;
+    let hproc = HPROCESS::OpenProcess(PROCESS::QUERY_LIMITED_INFORMATION, false, pid)?;
 
     // 3. Get the executable path
     let exe_path = hproc.QueryFullProcessImageName(PROCESS_NAME::WIN32)?;
@@ -1559,7 +1560,7 @@ fn get_exe_icon(hwnd: &w::HWND) -> AnyResult<w::HICON> {
     // Get the number of icons in the EXE file
     let num_icons = unsafe {
         ExtractIconExW(
-            PCWSTR(w::WString::from_str(&exe_path).as_ptr()),
+            PCWSTR(WString::from_str(&exe_path).as_ptr()),
             -1,
             None,
             None,
@@ -1568,10 +1569,10 @@ fn get_exe_icon(hwnd: &w::HWND) -> AnyResult<w::HICON> {
     };
 
     // Initialize slices to hold the small and large icons
-    let mut small_icons = iter::repeat_with(|| unsafe { DestroyIconGuard::new(w::HICON::NULL) })
+    let mut small_icons = iter::repeat_with(|| unsafe { DestroyIconGuard::new(HICON::NULL) })
         .take(num_icons as usize)
         .collect::<Box<_>>();
-    let mut large_icons = iter::repeat_with(|| unsafe { DestroyIconGuard::new(w::HICON::NULL) })
+    let mut large_icons = iter::repeat_with(|| unsafe { DestroyIconGuard::new(HICON::NULL) })
         .take(num_icons as usize)
         .collect::<Box<_>>();
 
@@ -1581,7 +1582,7 @@ fn get_exe_icon(hwnd: &w::HWND) -> AnyResult<w::HICON> {
     //       so we extract all icons and return the first valid one
     let extracted = unsafe {
         ExtractIconExW(
-            PCWSTR(w::WString::from_str(&exe_path).as_ptr()),
+            PCWSTR(WString::from_str(&exe_path).as_ptr()),
             0,
             Some(large_icons.as_mut_ptr() as *mut _),
             Some(small_icons.as_mut_ptr() as *mut _),
@@ -1594,9 +1595,9 @@ fn get_exe_icon(hwnd: &w::HWND) -> AnyResult<w::HICON> {
         // Iterate through the extracted icons and return the first valid one
         for (small_icon, large_icon) in small_icons.iter_mut().zip(large_icons.iter_mut()) {
             // Prefer small icon, fallback to large icon
-            if **small_icon != w::HICON::INVALID && **small_icon != w::HICON::NULL {
+            if **small_icon != HICON::INVALID && **small_icon != HICON::NULL {
                 return Ok(small_icon.leak());
-            } else if **large_icon != w::HICON::INVALID && **large_icon != w::HICON::NULL {
+            } else if **large_icon != HICON::INVALID && **large_icon != HICON::NULL {
                 return Ok(large_icon.leak());
             }
         }
