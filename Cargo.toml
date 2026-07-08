@@ -6,7 +6,7 @@ edition = "2024"
 
 [dependencies.winsafe]
 git = "https://github.com/rodrigocfd/winsafe.git"
-rev = "dba8e861e736beeef5c9c1749de79767a1dd4936"
+rev = "ac42e6e8e6fe9061c7669c3350087248e97b8ecd"
 features = [
     "advapi",
     "dwm",
@@ -18,7 +18,7 @@ features = [
 ]
 
 [build-dependencies]
-embed-resource = "3.0.9"
+embed-resource = "3.0.11"
 
 [profile.release]
 lto = "fat"

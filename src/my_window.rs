@@ -4,8 +4,7 @@ use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::rc::Rc;
 use std::sync::{Mutex, MutexGuard, RwLock};
-use winsafe::msg::WndMsg;
-use winsafe::msg::wm::SetFont;
+use winsafe::msg::{Wm, WmSetFont, LvmSetBkColor, LvmSetImageList, LvmSetTextBkColor, LvmSetTextColor};
 
 use winsafe::co::{
     BST, CHARSET, CLIP, FW, GCLP, HWND_PLACE, ICON_SZ, ILC, KEY, LVS, LVS_EX, LVSIL, MONITOR,
@@ -16,7 +15,6 @@ use winsafe::gui::{
     Button, ButtonOpts, CheckBox, CheckBoxOpts, Horz, Icon, Label, LabelOpts, ListView,
     ListViewOpts, Vert, WindowMain, WindowMainOpts, dpi,
 };
-use winsafe::msg::lvm::{SetBkColor, SetImageList, SetTextBkColor, SetTextColor};
 use winsafe::prelude::{
     GuiEventsButton as _, GuiEventsLabel as _, GuiEventsParent as _, GuiEventsWindow as _,
     GuiWindow as _, Handle as _,
@@ -260,23 +258,23 @@ impl MyWindow {
 
         // Update the font for all controls
         unsafe {
-            self.label.hwnd().SendMessage(SetFont {
+            self.label.hwnd().SendMessage(WmSetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
-            self.top_label.hwnd().SendMessage(SetFont {
+            self.top_label.hwnd().SendMessage(WmSetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
-            self.refresh_btn.hwnd().SendMessage(SetFont {
+            self.refresh_btn.hwnd().SendMessage(WmSetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
-            self.help_btn.hwnd().SendMessage(SetFont {
+            self.help_btn.hwnd().SendMessage(WmSetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
-            self.fullscreenize_btn.hwnd().SendMessage(SetFont {
+            self.fullscreenize_btn.hwnd().SendMessage(WmSetFont {
                 hfont: font.raw_copy(),
                 redraw: true,
             });
@@ -351,7 +349,7 @@ impl MyWindow {
 
         // Set the background color of the listview
         unsafe {
-            process_list.SendMessage(SetBkColor {
+            process_list.SendMessage(LvmSetBkColor {
                 color: Option::from(listview_bg_color),
             })
         }
@@ -360,7 +358,7 @@ impl MyWindow {
 
         // Set the background color of the elements in the listview
         unsafe {
-            process_list.SendMessage(SetTextBkColor {
+            process_list.SendMessage(LvmSetTextBkColor {
                 color: Option::from(listview_bg_color),
             })
         }
@@ -369,7 +367,7 @@ impl MyWindow {
 
         // Set the text color of the elements in the listview
         unsafe {
-            process_list.SendMessage(SetTextColor {
+            process_list.SendMessage(LvmSetTextColor {
                 color: Option::from(text_color),
             })
         }
@@ -493,7 +491,7 @@ impl MyWindow {
                         [
                             /* Method 1: WM_GETICON Message */
                             |hwnd: &HWND| {
-                                HICON::from_ptr(hwnd.SendMessage(WndMsg::new(
+                                HICON::from_ptr(hwnd.SendMessage(Wm::new(
                                     WM::GETICON,
                                     ICON_SZ::SMALL.raw() as usize,
                                     0,
@@ -574,7 +572,7 @@ impl MyWindow {
 
         // Set the image list for the listview
         let _ = unsafe {
-            self.process_list.hwnd().SendMessage(SetImageList {
+            self.process_list.hwnd().SendMessage(LvmSetImageList {
                 himagelist: if use_icons {
                     Some(image_list.raw_copy())
                 } else {
@@ -656,7 +654,7 @@ impl MyWindow {
                     self2
                         .wnd
                         .hwnd()
-                        .PostMessage(WndMsg::new(WM::APP, WM::USER.raw() as usize, 0))
+                        .PostMessage(Wm::new(WM::APP, WM::USER.raw() as usize, 0))
                         .map_err(|e| {
                             eprintln!("Failed to post WM_APP message - PostMessage Failed: {e}");
                         })
@@ -727,7 +725,7 @@ impl MyWindow {
                     self2
                         .wnd
                         .hwnd()
-                        .SendMessage(WndMsg::new(WM::COMMAND, a.wparam, a.lparam));
+                        .SendMessage(Wm::new(WM::COMMAND, a.wparam, a.lparam));
                 }
                 Ok(1)
             }
@@ -737,7 +735,7 @@ impl MyWindow {
         self.wnd.on().wm(WM::DPICHANGED, {
             let self2 = self.clone();
             let windows = windows.clone();
-            move |dpi_changed: WndMsg| {
+            move |dpi_changed: Wm| {
                 // Store the new DPI of the window
                 // LOWORD and HIWORD of the wParam contains the X and Y DPI values, which should be the same
                 self2
